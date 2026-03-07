@@ -37,6 +37,7 @@ class TranspiledJob:
     job_information: JobInfo = None
     machine_name: str | None = None
     transpiled_circuit: QuantumCircuit | None = None
+    physical_layout: list[int] | None = None
     
 @dataclass
 class ExecutionResult:
