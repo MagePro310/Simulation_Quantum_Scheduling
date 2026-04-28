@@ -11,7 +11,7 @@ sys.path.append('./')
 from component.dataclass.job_info import JobInfo, SchedulerJobInfo
 from algorithm.heuristic.FFD import FFD
 
-class SchedulePhase(ABC):
+class BaseSchedulePhase(ABC):
     """
     Abstract base class for the Schedule Phase.
     
@@ -37,7 +37,7 @@ class SchedulePhase(ABC):
         """
         pass
 
-class ConcreteSchedulePhase(SchedulePhase):
+class ConcreteSchedulePhase(BaseSchedulePhase):
     def execute(self, origin_job_info: Dict[str, JobInfo], machines: Dict[str, Any], capture_result_schedule: Any) -> Tuple[Dict[str, JobInfo], Any, Any]:
         # Process job info and cut the circuits if needed
 
@@ -54,7 +54,6 @@ class ConcreteSchedulePhase(SchedulePhase):
         # capture
         capture_result_schedule.nameSchedule = "FFD"
         capture_result_schedule.ScheduleLatency = end_time - start_time
-
         # Calculate Metrics
         capture_result_schedule.calculate_metrics(scheduler_job)
 

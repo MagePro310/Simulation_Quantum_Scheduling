@@ -8,10 +8,11 @@ sys.path.append('./')
 
 from component.dataclass.job_info import SchedulerJobInfo
 from component.dataclass.job_info import TranspiledJob
+from component.dataclass.job_info import JobExecutionRelation
 from qiskit.compiler import transpile
 import mapomatic as mm
 
-class TranspilePhase(ABC):
+class BaseTranspilePhase(ABC):
     """
     Abstract base class for the Transpile Phase.
     
@@ -20,31 +21,74 @@ class TranspilePhase(ABC):
     """ 
     
     @abstractmethod
-    def execute(self, scheduler_job: Dict[str, SchedulerJobInfo], machines: Dict[str, Any], capture_result_schedule: Any) -> Dict[str, TranspiledJob]:
+    def execute(
+        self,
+        scheduler_job_estimate: Dict[str, SchedulerJobInfo],
+        machines: Dict[str, Any],
+        capture_result_schedule: Any,
+        execution_job_relations: Dict[str, JobExecutionRelation] | None = None,
+    ) -> Dict[str, TranspiledJob]:
         """
         Executes the transpile phase.
 
         Args:
             scheduler_job: Dictionary of scheduled jobs.
             machines: Dictionary of available machines.
+            execution_job_relations: Optional execution relation map.
+                If provided, transpilation is driven by this structure and
+                generated `TranspiledJob` objects are written back into it.
 
         Returns:
             Updated scheduler_job with transpiled circuits.
         """
         pass
 
-class ConcreteTranspilePhase(TranspilePhase):
-    def execute(self, scheduler_job: Dict[str, SchedulerJobInfo], machines: Dict[str, Any], capture_result_schedule: Any) -> Dict[str, TranspiledJob]:
+class ConcreteTranspilePhase(BaseTranspilePhase):
+    def execute(
+        self,
+        scheduler_job_estimate: Dict[str, SchedulerJobInfo],
+        machines: Dict[str, Any],
+        capture_result_schedule: Any,
+        execution_job_relations: Dict[str, JobExecutionRelation] | None = None,
+    ) -> Dict[str, TranspiledJob]:
         transpiled_job: Dict[str, TranspiledJob] = {}
-        
-        for job_name, job_info in scheduler_job.items():
-            transpiled_job[job_name] = TranspiledJob(job_information=job_info.job_information, machine_name=job_info.assigned_machine)
-            transpiled_job_temp = transpile(job_info.job_information.circuit, machines[job_info.assigned_machine])
-            layouts = mm.matching_layouts(transpiled_job_temp, machines[job_info.assigned_machine])
-            scores = mm.evaluate_layouts(transpiled_job_temp, layouts, machines[job_info.assigned_machine])
+
+        if execution_job_relations is not None:
+            transpile_inputs = {
+                job_name: relation.scheduler_job
+                for job_name, relation in execution_job_relations.items()
+                if relation.scheduler_job is not None
+            }
+        else:
+            transpile_inputs = scheduler_job_estimate
+
+        for job_name, job_info in transpile_inputs.items():
+            machine_name = job_info.assigned_machine
+            if execution_job_relations is not None and job_name in execution_job_relations:
+                machine_name = execution_job_relations[job_name].machine_name or machine_name
+
+            transpiled_job[job_name] = TranspiledJob(
+                job_information=job_info.job_information,
+                machine_name=machine_name,
+            )
+
+            transpiled_job_temp = transpile(job_info.job_information.circuit, machines[machine_name])
+            layouts = mm.matching_layouts(transpiled_job_temp, machines[machine_name])
+            scores = mm.evaluate_layouts(transpiled_job_temp, layouts, machines[machine_name])
+            
             best_layout = scores[0][0]
             number_of_qubits = job_info.job_information.circuit.num_qubits
             best_layout = best_layout[0:number_of_qubits]
-            print(f"Best layout for job {job_name} on machine {job_info.assigned_machine}: {best_layout}")
-            transpiled_job[job_name].transpiled_circuit = transpile(job_info.job_information.circuit, machines[job_info.assigned_machine], initial_layout=best_layout, scheduling_method='alap')
+            
+            transpiled_job[job_name].physical_layout = best_layout
+            transpiled_job[job_name].transpiled_circuit = transpile(
+                job_info.job_information.circuit,
+                machines[machine_name],
+                initial_layout=best_layout,
+                scheduling_method='alap',
+            )
+
+            if execution_job_relations is not None and job_name in execution_job_relations:
+                execution_job_relations[job_name].transpiled_job = transpiled_job[job_name]
+            
         return transpiled_job

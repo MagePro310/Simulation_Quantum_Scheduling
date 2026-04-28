@@ -38,6 +38,23 @@ class TranspiledJob:
     machine_name: str | None = None
     transpiled_circuit: QuantumCircuit | None = None
     physical_layout: list[int] | None = None
+
+@dataclass
+class JobExecutionRelation:
+    """
+    Unified job payload passed into execution.
+
+    Contains:
+    - scheduling metadata (`scheduler_job`)
+    - transpilation metadata (`transpiled_job`)
+    - machine-local predecessor/successor links
+    """
+    job_name: str
+    machine_name: str
+    scheduler_job: SchedulerJobInfo
+    transpiled_job: TranspiledJob | None = None
+    prev_job_on_machine: str | None = None
+    next_job_on_machine: str | None = None
     
 @dataclass
 class ExecutionResult:

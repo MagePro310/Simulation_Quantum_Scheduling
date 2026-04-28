@@ -5,7 +5,7 @@ import sys
 sys.path.append('./')
 
 from component.dataclass.job_info import SchedulerJobInfo
-
+from flow.schedule.estimated import estimated_schedule
 
 class FFD:
     """
@@ -65,7 +65,8 @@ class FFD:
                     
                     # Estimate execution time (simplified: assume 1 time unit per gate)
                     # You can replace this with a more sophisticated estimation
-                    execution_time = len(circuit.data) if hasattr(circuit, 'data') else 1.0
+                    
+                    execution_time = estimated_schedule(circuit, shots=1024)  # Example: using 1024 shots for estimation
                     job_info.scheduled_end_time = job_info.scheduled_start_time + execution_time
                     
                     # Update machine's current time

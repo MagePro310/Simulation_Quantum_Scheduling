@@ -9,37 +9,42 @@ from mqt.bench import BenchmarkLevel, get_benchmark
 from component.dataclass.job_info import JobInfo
 from component.ibm_simulator import sim_backend
 
-class InputPhase(ABC):
+class BaseInputPhase(ABC):
     """
     Abstract base class for the Input Phase.
     
     Input: (quantum circuit, priority) and set quantum machine
     Output: (set quantum circuit, priority) and set quantum machine
     """
-    
+       
     @abstractmethod
-    def create_circuit_jobs(self, capture_result_schedule: Any) -> Dict[str, JobInfo]:
+    def create_input(self, capture_result_schedule: Any) -> Tuple[Dict[str, JobInfo], Dict[str, Any]]:
         """
-        Create the list of quantum circuits that need to be run.
+        Create the input for the scheduling phase, including both circuit jobs and quantum machines.
         
         Returns:
-            Dictionary of JobInfo objects with job name as key.
-        """
-        pass
-    
-    @abstractmethod
-    def setup_quantum_machines(self, capture_result_schedule: Any) -> Dict[str, Any]:
-        """
-        Set up the list of available quantum machines.
-        
-        Returns:
-            Dictionary of quantum machines with machine name as key and backend instance as value.
+            Tuple containing:
+            - Dictionary of JobInfo objects with job name as key.
+            - Dictionary of quantum machines with machine name as key and backend instance as value.
         """
         pass
 
 
-class ConcreteInputPhase(InputPhase):
+class ConcreteInputPhase(BaseInputPhase):
     """Collect circuits and target machines before scheduling."""
+    
+    def create_input(self, capture_result_schedule: Any) -> Tuple[Dict[str, JobInfo], Dict[str, Any]]:
+        """
+        Create the input for the scheduling phase, including both circuit jobs and quantum machines.
+        
+        Returns:
+            Tuple containing:
+            - Dictionary of JobInfo objects with job name as key.
+            - Dictionary of quantum machines with machine name as key and backend instance as value.
+        """
+        origin_job_info = self.create_circuit_jobs(capture_result_schedule)
+        machines = self.setup_quantum_machines(capture_result_schedule)
+        return origin_job_info, machines
 
     def create_circuit_jobs(self, capture_result_schedule: Any) -> Dict[str, JobInfo]:
         """
@@ -57,7 +62,9 @@ class ConcreteInputPhase(InputPhase):
             origin_job_info[job_name] = JobInfo(
                 job_name=job_name,
                 circuit= get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=num_qubits),
-                shots=shots
+                shots=shots,
+                arrival_time=0,  # For simplicity, all jobs arrive at time 0
+                priority=1,  # For simplicity, all jobs have the same priority
             )
 
         # capture

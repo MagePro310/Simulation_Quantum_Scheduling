@@ -11,6 +11,25 @@ from flow.transpile.phase_transpile import ConcreteTranspilePhase
 from flow.execution.phase_execution import ConcreteExecutionPhase
 # from flow.result.result_phase import ConcreteResultPhase
 from component.visualize.gantt_chart import GanttChart
+from component.relation.job_relation import build_job_relations_from_schedule
+
+
+class TerminalColor:
+    BLUE = "\033[94m"
+    GREEN = "\033[92m"
+    CYAN = "\033[96m"
+    YELLOW = "\033[93m"
+    RESET = "\033[0m"
+
+
+def print_info(message: str):
+    print(f"{TerminalColor.BLUE}{message}{TerminalColor.RESET}")
+
+def print_success(message: str):
+    print(f"{TerminalColor.GREEN}{message}{TerminalColor.RESET}")
+
+def print_highlight(message: str):
+    print(f"{TerminalColor.CYAN}{message}{TerminalColor.RESET}")
 
 
 def test_concrete_flow():
@@ -19,42 +38,65 @@ def test_concrete_flow():
     capture_result_schedule = ResultOfSchedule()
     
     # Input Phase
-    print("Starting Input Phase...")
+    print_info("Starting Input Phase...")
     input_phase = ConcreteInputPhase()
     # Create circuit jobs
-    input_job = input_phase.create_circuit_jobs(capture_result_schedule)
-    # Setup quantum machines
-    machines = input_phase.setup_quantum_machines(capture_result_schedule)
-    print("Input Phase Complete.")
+    input_job, machines = input_phase.create_input(capture_result_schedule)
+    print_success("Input Phase Complete.")
     
     # Schedule Phase
-    print("Starting Schedule Phase...")
+    print_info("Starting Schedule Phase...")
     schedule_phase = ConcreteSchedulePhase()
     # Schedule jobs on machines
     scheduler_job_estimate = schedule_phase.execute(input_job, machines, capture_result_schedule)
-    print("Schedule Phase Complete.")
+    print_success("Schedule Phase Complete.")
 
-    # # Visualize schedule as a Gantt chart
-    # chart = GanttChart(title="Quantum Schedule", x_axis_label="Time", y_axis_label="Machines")
-    # chart.display(scheduler_job_estimate, machines)
-    # print("Gantt chart generated.")
+    # Build prev/next relation on each machine from scheduling output.
+    execution_job_relations = build_job_relations_from_schedule(
+        scheduler_job_estimate=scheduler_job_estimate,
+    )
+
+    print_highlight("Built machine neighbor relations from schedule output.")
+    for job_name, relation in execution_job_relations.items():
+        print(
+            f"{job_name}: machine={relation.machine_name}, "
+            f"prev={relation.prev_job_on_machine}, "
+            f"next={relation.next_job_on_machine}"
+        )
+
+    # Visualize schedule as a Gantt chart
+    chart = GanttChart(title="Quantum Schedule", x_axis_label="Time", y_axis_label="Machines")
+    chart.display(scheduler_job_estimate, machines)
+    print_highlight("Gantt chart generated.")
 
     # Transpile Phase    
-    print("Starting Transpile Phase...")
+    print_info("Starting Transpile Phase...")
     transpile_phase = ConcreteTranspilePhase()
-    transpiled_job = transpile_phase.execute(scheduler_job_estimate, machines, capture_result_schedule)
-    print("Transpile Phase Complete.")
+    transpiled_job = transpile_phase.execute(
+        scheduler_job_estimate,
+        machines,
+        capture_result_schedule,
+        execution_job_relations=execution_job_relations,
+    )
+    print_success("Transpile Phase Complete.")
+    print(transpiled_job)
     
-    # # # Execution Phase
-    # print("Starting Execution Phase...")
-    # execution_phase = ConcreteExecutionPhase()
-    # scheduler_job_simulation = execution_phase.execute(scheduler_job_estimate, machines, transpiled_job, capture_result_schedule)
-    # print("Execution Phase Complete.")
+    # Execution Phase
+    print_info("Starting Execution Phase...")
+    execution_phase = ConcreteExecutionPhase()
+    scheduler_job_simulation = execution_phase.execute(
+        scheduler_job_estimate,
+        machines,
+        transpiled_job,
+        execution_job_relations,
+    )
+    print_success("Execution Phase Complete.")
+    print(scheduler_job_simulation)
     
-    # # Visualize schedule as a Gantt chart
-    # chart = GanttChart(title="Quantum Schedule", x_axis_label="Time", y_axis_label="Machines")
-    # chart.display(scheduler_job_simulation, machines)
-    # print("Gantt chart generated.")
+    # Visualize simulated execution as a Gantt chart
+    chart = GanttChart(title="Quantum Execution (Transpiled)", x_axis_label="Time", y_axis_label="Machines")
+    chart.display(scheduler_job_simulation, machines)
+    print_highlight("Execution Gantt chart generated.")
     
     # print("Starting Result Phase...")
     # result_phase = ConcreteResultPhase()
