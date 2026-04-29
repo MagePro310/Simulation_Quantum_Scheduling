@@ -7,7 +7,6 @@ sys.path.append('/home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/')
 from component.dataclass.result_schedule import ResultOfSchedule
 from flow.input.phase_input import ConcreteInputPhase
 from flow.schedule.phase_schedule import ConcreteSchedulePhase
-from flow.execution.phase_transpile import ConcreteTranspilePhase
 from flow.execution.phase_execution import ConcreteExecutionPhase
 # from flow.result.result_phase import ConcreteResultPhase
 from component.visualize.gantt_chart import GanttChart
@@ -58,27 +57,13 @@ def test_concrete_flow():
     )
     print_success("Execution Queue Building Complete.")
 
-    # Transpile Phase    
-    print_info("Starting Transpile Phase...")
-    transpile_phase = ConcreteTranspilePhase()
-    transpiled_job = transpile_phase.execute(
-        machines,
-        capture_result_schedule,
-        execution_job_relations=execution_job_relations,
-    )
-    print_success("Transpile Phase Complete.")
-    
-    for job_name, job_info in transpiled_job.items():
-        print(f"{job_name}: {job_info}")
-    
-    # Execution Phase
-    print_info("Starting Execution Phase...")
+    # Combined Transpile + Execution Phase
+    print_info("Starting Execution Phase (transpile merged)...")
     execution_phase = ConcreteExecutionPhase()
     scheduler_job_simulation = execution_phase.execute(
         scheduler_job_estimate,
         machines,
-        transpiled_job,
-        execution_job_relations,
+        execution_job_relations=execution_job_relations,
     )
     print_success("Execution Phase Complete.")
     print(scheduler_job_simulation)
