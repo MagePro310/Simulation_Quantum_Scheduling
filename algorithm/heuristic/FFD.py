@@ -12,13 +12,13 @@ class FFD:
     First Fit Decreasing (FFD) Algorithm for Quantum Job Scheduling.
     
     This algorithm schedules quantum circuits (jobs) onto quantum machines based on:
-    - Circuit size: number of qubits required by the circuit
-    - Machine capacity: number of qubits available on the machine
+    - Job priority: Sorted by circuit size (number of qubits) in decreasing order
+    - Machine availability: Each job assigned to machine with earliest completion time
     
     Algorithm steps:
     1. Sort jobs in decreasing order by circuit size (number of qubits)
-    2. For each job, assign it to the first machine that has enough capacity
-    3. Track the current load on each machine to ensure capacity constraints
+    2. For each job, assign it to the machine that becomes available soonest
+    3. Schedule job to start when assigned machine finishes current workload
     """
     
     @staticmethod
@@ -40,48 +40,34 @@ class FFD:
             reverse=True
         )
         
-        # Step 2: Initialize machine tracking
+        # Step 2: Initialize machine tracking (only track when each machine becomes free)
         machine_current_time = {machine_name: 0.0 for machine_name in machines.keys()}
-        machine_used_qubits = {machine_name: 0 for machine_name in machines.keys()}
         
-        # Step 3: Assign each job to the first fitting machine
+        # Step 3: Assign each job to the machine with earliest availability
         for job_name, job_info in sorted_jobs:
             circuit = job_info.job_information.circuit
-            circuit_qubits = circuit.num_qubits
             
-            # Find the first machine that can accommodate this circuit
-            assigned = False
+            # Find the machine that will be free soonest
+            # (First Fit Decreasing: assign to first available machine in iteration order)
+            earliest_machine = None
+            earliest_time = float('inf')
+            
             for machine_name, machine_backend in machines.items():
-                machine_capacity = machine_backend.num_qubits
-                current_load = machine_used_qubits[machine_name]
-                
-                # Check if the machine has enough qubits for this circuit
-                if circuit_qubits + current_load <= machine_capacity:
-                    # Assign the job to this machine
-                    job_info.assigned_machine = machine_name
-                    
-                    # Set scheduled times (simple sequential scheduling on each machine)
-                    job_info.scheduled_start_time = machine_current_time[machine_name]
-                    
-                    # Estimate execution time (simplified: assume 1 time unit per gate)
-                    # You can replace this with a more sophisticated estimation
-                    
-                    execution_time = estimated_schedule(circuit, shots=1024)  # Example: using 1024 shots for estimation
-                    job_info.scheduled_end_time = job_info.scheduled_start_time + execution_time
-                    
-                    # Update machine's current time
-                    machine_current_time[machine_name] = job_info.scheduled_end_time
-                    machine_used_qubits[machine_name] += circuit_qubits
-                    
-                    assigned = True
-                    break
+                if machine_current_time[machine_name] < earliest_time:
+                    earliest_time = machine_current_time[machine_name]
+                    earliest_machine = machine_name
             
-            # If no machine can accommodate this job, raise an error
-            if not assigned:
-                raise ValueError(
-                    f"Job '{job_name}' requires {circuit_qubits} qubits, "
-                    f"but no machine has sufficient remaining capacity. "
-                    f"Machine usage: {[(name, machine_used_qubits[name], backend.num_qubits) for name, backend in machines.items()]}"
-                )
+            # Assign the job to the earliest available machine
+            job_info.assigned_machine = earliest_machine
+            
+            # Set scheduled times
+            job_info.scheduled_start_time = machine_current_time[earliest_machine]
+            
+            # Estimate execution time using the estimation function
+            execution_time = estimated_schedule(circuit, shots=1024)
+            job_info.scheduled_end_time = job_info.scheduled_start_time + execution_time
+            
+            # Update machine's completion time
+            machine_current_time[earliest_machine] = job_info.scheduled_end_time
         
         return scheduler_job
