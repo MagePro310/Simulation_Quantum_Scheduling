@@ -7,11 +7,11 @@ sys.path.append('/home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/')
 from component.dataclass.result_schedule import ResultOfSchedule
 from flow.input.phase_input import ConcreteInputPhase
 from flow.schedule.phase_schedule import ConcreteSchedulePhase
-from flow.transpile.phase_transpile import ConcreteTranspilePhase
+from flow.execution.phase_transpile import ConcreteTranspilePhase
 from flow.execution.phase_execution import ConcreteExecutionPhase
 # from flow.result.result_phase import ConcreteResultPhase
 from component.visualize.gantt_chart import GanttChart
-from component.relation.job_relation import build_job_relations_from_schedule
+from flow.execution.execution_queue import build_job_relations_from_schedule
 
 
 class TerminalColor:
@@ -50,36 +50,26 @@ def test_concrete_flow():
     # Schedule jobs on machines
     scheduler_job_estimate = schedule_phase.execute(input_job, machines, capture_result_schedule)
     print_success("Schedule Phase Complete.")
-
-    # Build prev/next relation on each machine from scheduling output.
+    
+    print_info("Strarting Execution Queue Building...")
+    # Build execution queue relations from the schedule
     execution_job_relations = build_job_relations_from_schedule(
         scheduler_job_estimate=scheduler_job_estimate,
     )
-
-    print_highlight("Built machine neighbor relations from schedule output.")
-    for job_name, relation in execution_job_relations.items():
-        print(
-            f"{job_name}: machine={relation.machine_name}, "
-            f"prev={relation.prev_job_on_machine}, "
-            f"next={relation.next_job_on_machine}"
-        )
-
-    # Visualize schedule as a Gantt chart
-    chart = GanttChart(title="Quantum Schedule", x_axis_label="Time", y_axis_label="Machines")
-    chart.display(scheduler_job_estimate, machines)
-    print_highlight("Gantt chart generated.")
+    print_success("Execution Queue Building Complete.")
 
     # Transpile Phase    
     print_info("Starting Transpile Phase...")
     transpile_phase = ConcreteTranspilePhase()
     transpiled_job = transpile_phase.execute(
-        scheduler_job_estimate,
         machines,
         capture_result_schedule,
         execution_job_relations=execution_job_relations,
     )
     print_success("Transpile Phase Complete.")
-    print(transpiled_job)
+    
+    for job_name, job_info in transpiled_job.items():
+        print(f"{job_name}: {job_info}")
     
     # Execution Phase
     print_info("Starting Execution Phase...")

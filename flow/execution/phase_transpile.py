@@ -23,7 +23,6 @@ class BaseTranspilePhase(ABC):
     @abstractmethod
     def execute(
         self,
-        scheduler_job_estimate: Dict[str, SchedulerJobInfo],
         machines: Dict[str, Any],
         capture_result_schedule: Any,
         execution_job_relations: Dict[str, JobExecutionRelation] | None = None,
@@ -46,7 +45,6 @@ class BaseTranspilePhase(ABC):
 class ConcreteTranspilePhase(BaseTranspilePhase):
     def execute(
         self,
-        scheduler_job_estimate: Dict[str, SchedulerJobInfo],
         machines: Dict[str, Any],
         capture_result_schedule: Any,
         execution_job_relations: Dict[str, JobExecutionRelation] | None = None,
@@ -59,8 +57,6 @@ class ConcreteTranspilePhase(BaseTranspilePhase):
                 for job_name, relation in execution_job_relations.items()
                 if relation.scheduler_job is not None
             }
-        else:
-            transpile_inputs = scheduler_job_estimate
 
         for job_name, job_info in transpile_inputs.items():
             machine_name = job_info.assigned_machine

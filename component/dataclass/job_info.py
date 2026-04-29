@@ -31,7 +31,7 @@ class SchedulerJobInfo:
     scheduled_start_time: float = 0
     scheduled_end_time: float = 0
     assigned_machine: str = None
-
+    
 @dataclass
 class TranspiledJob:
     job_information: JobInfo = None
