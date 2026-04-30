@@ -49,6 +49,9 @@ def test_concrete_flow():
     # Schedule jobs on machines
     scheduler_job_estimate = schedule_phase.execute(input_job, machines, capture_result_schedule)
     print_success("Schedule Phase Complete.")
+    print(scheduler_job_estimate)
+    
+
     
     print_info("Strarting Execution Queue Building...")
     # Build execution queue relations from the schedule
@@ -72,6 +75,7 @@ def test_concrete_flow():
     chart = GanttChart(title="Quantum Execution (Transpiled)", x_axis_label="Time", y_axis_label="Machines")
     chart.display(scheduler_job_simulation, machines)
     print_highlight("Execution Gantt chart generated.")
+
     
     # print("Starting Result Phase...")
     # result_phase = ConcreteResultPhase()

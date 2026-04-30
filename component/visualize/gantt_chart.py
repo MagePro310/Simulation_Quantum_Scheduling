@@ -115,7 +115,7 @@ class GanttChart:
                 )
                 
                 # Draw label if bar is big enough
-                text_color = "white" if is_dark(job['color']) else "black"
+                text_color = "white" if self.is_dark(job['color']) else "black"
                 # Only show text if height is reasonable
                 fontsize = 9 if num_lanes == 1 else max(6, 9 - num_lanes)
                 
@@ -176,9 +176,10 @@ class GanttChart:
         plt.close('all')
         print(f"Gantt chart saved to: {output_path}")
 
-def is_dark(hex_color: str) -> bool:
-    """Check if color is dark for text contrast."""
-    hex_color = hex_color.lstrip('#')
-    return ((int(hex_color[0:2], 16) * 299 + 
-             int(hex_color[2:4], 16) * 587 + 
-             int(hex_color[4:6], 16) * 114) / 1000) < 128
+    @staticmethod
+    def is_dark(hex_color: str) -> bool:
+        """Check if color is dark for text contrast."""
+        hex_color = hex_color.lstrip('#')
+        return ((int(hex_color[0:2], 16) * 299 + 
+                 int(hex_color[2:4], 16) * 587 + 
+                 int(hex_color[4:6], 16) * 114) / 1000) < 128
