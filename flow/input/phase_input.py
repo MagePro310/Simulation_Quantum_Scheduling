@@ -9,28 +9,8 @@ from mqt.bench import BenchmarkLevel, get_benchmark
 from component.dataclass.job_info import JobInfo
 from component.ibm_simulator import sim_backend
 
-class BaseInputPhase(ABC):
-    """
-    Abstract base class for the Input Phase.
-    
-    Input: (quantum circuit, priority) and set quantum machine
-    Output: (set quantum circuit, priority) and set quantum machine
-    """
-       
-    @abstractmethod
-    def create_input(self, capture_result_schedule: Any) -> Tuple[Dict[str, JobInfo], Dict[str, Any]]:
-        """
-        Create the input for the scheduling phase, including both circuit jobs and quantum machines.
-        
-        Returns:
-            Tuple containing:
-            - Dictionary of JobInfo objects with job name as key.
-            - Dictionary of quantum machines with machine name as key and backend instance as value.
-        """
-        pass
 
-
-class ConcreteInputPhase(BaseInputPhase):
+class ConcreteInputPhase():
     """Collect circuits and target machines before scheduling."""
     
     def create_input(self, capture_result_schedule: Any) -> Tuple[Dict[str, JobInfo], Dict[str, Any]]:

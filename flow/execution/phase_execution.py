@@ -15,25 +15,8 @@ from qiskit.compiler import transpile
 import mapomatic as mm
 
 
-class ExecutionPhase(ABC):
-    """
-    Abstract base class for the Execution Phase.
-    
-    This merged phase performs both transpilation (when needed) and execution
-    simulation. If `transpiled_job` is provided the phase will only run the
-    execution simulation; otherwise it will transpile jobs first.
-    """
-    @abstractmethod
-    def execute(
-        self,
-        scheduler_job_estimate: Dict[str, SchedulerJobInfo],
-        machines: Dict[str, Any],
-        execution_job_relations: Dict[str, JobExecutionRelation] | None = None,
-    ) -> Dict[str, SchedulerJobInfo]:
-        pass
 
-
-class ConcreteExecutionPhase(ExecutionPhase):
+class ConcreteExecutionPhase():
     def _clone_scheduler_jobs(
         self,
         scheduler_job_estimate: Dict[str, SchedulerJobInfo],
@@ -225,8 +208,6 @@ class ConcreteExecutionPhase(ExecutionPhase):
             execution_job_relations,
         )
 
-        machine_time_cursor: Dict[str, float] = {m: 0.0 for m in machines.keys()}
-
         for machine_name, ordered_jobs in machine_jobs_map.items():
             for job_name in ordered_jobs:
                 if job_name not in scheduler_job_simulation:
@@ -235,17 +216,12 @@ class ConcreteExecutionPhase(ExecutionPhase):
                 sim_job = scheduler_job_simulation[job_name]
                 duration = self._execution_duration(job_name, transpiled_job, scheduler_job_simulation)
 
-                start_time = max(
-                    float(sim_job.scheduled_start_time),
-                    machine_time_cursor.get(machine_name, 0.0),
-                )
+                start_time = float(sim_job.scheduled_start_time)
                 end_time = start_time + duration
 
                 sim_job.assigned_machine = machine_name
                 sim_job.scheduled_start_time = start_time
                 sim_job.scheduled_end_time = end_time
-
-                machine_time_cursor[machine_name] = end_time
 
         return scheduler_job_simulation
 
@@ -264,7 +240,6 @@ class ConcreteExecutionPhase(ExecutionPhase):
         
 
         # Phase 1: Transpilation - transpile all jobs first to get actual circuit durations
-
         transpiled_job = self._transpile_jobs(
             scheduler_job_estimate,
             machines,

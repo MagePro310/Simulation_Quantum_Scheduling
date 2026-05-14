@@ -10,7 +10,6 @@ from flow.schedule.phase_schedule import ConcreteSchedulePhase
 from flow.execution.phase_execution import ConcreteExecutionPhase
 # from flow.result.result_phase import ConcreteResultPhase
 from component.visualize.gantt_chart import GanttChart
-from flow.execution.execution_queue import build_job_relations_from_schedule
 
 
 class TerminalColor:
@@ -35,40 +34,36 @@ def test_concrete_flow():
 
     # Initialize result_Schedule
     capture_result_schedule = ResultOfSchedule()
-    
     # Input Phase
     print_info("Starting Input Phase...")
-    input_phase = ConcreteInputPhase()
     # Create circuit jobs
-    input_job, machines = input_phase.create_input(capture_result_schedule)
+    input_job, machines = ConcreteInputPhase().create_input(capture_result_schedule)
     print_success("Input Phase Complete.")
     
     # Schedule Phase
     print_info("Starting Schedule Phase...")
-    schedule_phase = ConcreteSchedulePhase()
     # Schedule jobs on machines
-    scheduler_job_estimate = schedule_phase.execute(input_job, machines, capture_result_schedule)
+    scheduler_job_estimate = ConcreteSchedulePhase().execute(input_job, machines, capture_result_schedule)
     print_success("Schedule Phase Complete.")
     print(scheduler_job_estimate)
-    
-
-    
+        
     print_info("Strarting Execution Queue Building...")
     # Build execution queue relations from the schedule
-    execution_job_relations = build_job_relations_from_schedule(
+    execution_job_relations = ConcreteSchedulePhase().build_job_relations_from_schedule(
         scheduler_job_estimate=scheduler_job_estimate,
     )
     print_success("Execution Queue Building Complete.")
 
     # Combined Transpile + Execution Phase
     print_info("Starting Execution Phase (transpile merged)...")
-    execution_phase = ConcreteExecutionPhase()
-    scheduler_job_simulation = execution_phase.execute(
+    scheduler_job_simulation =  ConcreteExecutionPhase().execute(
         scheduler_job_estimate,
         machines,
         execution_job_relations=execution_job_relations,
     )
     print_success("Execution Phase Complete.")
+    capture_result_schedule.calculate_metrics(scheduler_job_simulation)
+    print_highlight(f"Execution makespan (parallel): {capture_result_schedule.makespan}")
     print(scheduler_job_simulation)
     
     # Visualize simulated execution as a Gantt chart

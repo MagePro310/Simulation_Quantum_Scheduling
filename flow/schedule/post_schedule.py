@@ -1,45 +1,12 @@
-from abc import ABC, abstractmethod
-import sched
-from typing import Any, Dict, Tuple
-import time
-import sys
-from copy import deepcopy
-
-# Add the project root to sys.path if not already there
-sys.path.append('./')
 from collections import defaultdict
-from component.dataclass.job_info import JobInfo, SchedulerJobInfo
-from algorithm.heuristic.FFD import FFD
-from component.dataclass.job_info import SchedulerJobInfo, TranspiledJob, JobExecutionRelation
 
-    
-class ConcreteSchedulePhase():
-    def base_schedule_algorithm(self, scheduler_job: Dict[str, SchedulerJobInfo], machines: Dict[str, Any]) -> Dict[str, SchedulerJobInfo]:
-        """
-        Base scheduling algorithm using FFD.
+from pyparsing import Dict
+from copy import deepcopy
+from typing import Any, Tuple, Dict
+import sys
+from component.dataclass.job_info import JobExecutionRelation, SchedulerJobInfo, SchedulerJobInfo, TranspiledJob, TranspiledJob
 
-        Args:
-            scheduler_job: Dictionary of jobs to be scheduled.
-            machines: Dictionary of available machines.
-
-        Returns:
-            Updated scheduler_job with scheduling information.
-        """
-        print("Scheduling jobs on machines using FFD algorithm...")
-        return FFD.execute(scheduler_job, machines)
-    
-    def begin(self, origin_job_info: Dict[str, JobInfo]) -> Dict[str, SchedulerJobInfo]:
-        print("Beginning Schedule Phase...")
-        scheduler_job: Dict[str, SchedulerJobInfo] = {}
-        for job_name, job_info in origin_job_info.items():
-            scheduler_job[job_name] = SchedulerJobInfo(job_information=deepcopy(job_info))
-        return scheduler_job
-    
-    def capture(self, capture_result_schedule: Any, scheduler_job: Dict[str, SchedulerJobInfo], start_time: float, end_time: float):
-        capture_result_schedule.nameSchedule = "FFD"
-        capture_result_schedule.ScheduleLatency = end_time - start_time
-        capture_result_schedule.calculate_metrics(scheduler_job)
-        
+class PostSchedulePhase():
     def build_job_relations(self, jobs):
         jobs_by_machine = defaultdict(list)
         for j in jobs:
@@ -119,19 +86,3 @@ class ConcreteSchedulePhase():
             )
 
         return relations_by_job
-    
-    def execute(self, origin_job_info: Dict[str, JobInfo], machines: Dict[str, Any], capture_result_schedule: Any) -> Tuple[Dict[str, JobInfo], Any, Any]:
-        # Process job info and cut the circuits if needed
-        scheduler_job = self.begin(origin_job_info)
-        
-        start_time = time.time() 
-        scheduler_job = self.base_schedule_algorithm(scheduler_job, machines)
-        end_time = time.time()
-        
-        
-
-        self.capture(capture_result_schedule, scheduler_job, start_time, end_time)
-        
-        return scheduler_job
-    
-
