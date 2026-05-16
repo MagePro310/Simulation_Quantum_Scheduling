@@ -1,6 +1,5 @@
 
-
-from typing import Any, Dict
+from typing import Any, Dict, List
 from copy import deepcopy
 
 from component.dataclass.machine_characteristic import *
@@ -9,17 +8,8 @@ from component.dataclass.result_schedule import *
 
 
 class MainExecutionQuantum:
-    def execute(
-        self,
-        scheduler_job_estimate: Dict[str, SchedulerJobInfo],
-        machines: Dict[str, Any],
-        transpiled_job: Dict[str, TranspiledJob],
-        execution_job_relations: Dict[str, Any] | None = None,
-    ) -> Dict[str, SchedulerJobInfo]:
-        scheduler_job_simulation = self._clone_scheduler_jobs(scheduler_job_estimate)
-        return self._apply_execution_timing(
-            scheduler_job_simulation,
-            machines,
-            transpiled_job,
-            execution_job_relations,
-        )
+    def execute(self, machines: Dict[str, Any], transpiled_job: Dict[str, List[QuantumCircuit]]) -> Dict[str, JobInfo]:
+        """Simulate the execution of the schedule on the quantum machine."""
+        
+        
+        return 

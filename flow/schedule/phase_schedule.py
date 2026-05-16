@@ -29,7 +29,7 @@ class ConcreteSchedulePhase():
         capture_result_schedule.calculate_metrics(scheduler_job)
         
     
-    def execute(self, origin_job_info: Dict[str, JobInfo], machines: Dict[str, Any], capture_result_schedule: Any) -> Tuple[Dict[str, JobInfo]]:
+    def execute(self, origin_job_info: Dict[str, JobInfo], machines: Dict[str, Any], capture_result_schedule: Any) -> Dict[str, JobInfo]:
         # Process job info and cut the circuits if needed
         scheduler_job = self.pre_phase.execute(origin_job_info)
         

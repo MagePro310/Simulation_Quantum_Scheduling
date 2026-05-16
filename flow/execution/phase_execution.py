@@ -12,20 +12,20 @@ from component.dataclass.result_schedule import *
 class ConcreteExecutionPhase:
     def __init__(self):
         self.pre_phase = PreExecution()
-        # self.main_execution = MainExecutionQuantum()
+        self.main_execution = MainExecutionQuantum()
         # self.post_execution = PostExecution()
 
-    def execute(
-        self,
-        machines: Dict[str, Any],
-        execution_job_relations: Dict[str, Any] | None = None,
-    ) -> Dict[str, SchedulerJobInfo]:
+    def execute(self, machines: Dict[str, Any], execution_job_relations: Dict[str, JobInfo]) -> Dict[str, JobInfo]:
         """Delegate transpilation and execution to dedicated classes."""
         transpiled_job = self.pre_phase.transpile_jobs(
             machines,
             execution_job_relations,
         )
-        # scheduler_job_execution = self.main_execution.execute(
-        #     machines=machines,
-        #     transpiled_job=transpiled_job,
-        # )
+        print("Transpilation complete. Starting execution...")
+        print(f"Transpiled job: {transpiled_job}")
+        
+        time_machine_execution = self.main_execution.execute(
+            machines=machines,
+            transpiled_job=transpiled_job,
+        )
+        return time_machine_execution

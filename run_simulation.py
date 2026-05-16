@@ -45,7 +45,7 @@ def test_concrete_flow():
     # Schedule jobs on machines
     execution_job_relations = ConcreteSchedulePhase().execute(input_job, machines, capture_result_schedule)
     print_success("Schedule Phase Complete.")
-        
+
     print_info("Starting Execution Phase (transpile merged)...")
     scheduler_job_simulation =  ConcreteExecutionPhase().execute(
         machines,
