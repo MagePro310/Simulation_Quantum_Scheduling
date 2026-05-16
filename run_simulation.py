@@ -43,33 +43,25 @@ def test_concrete_flow():
     # Schedule Phase
     print_info("Starting Schedule Phase...")
     # Schedule jobs on machines
-    scheduler_job_estimate = ConcreteSchedulePhase().execute(input_job, machines, capture_result_schedule)
+    execution_job_relations = ConcreteSchedulePhase().execute(input_job, machines, capture_result_schedule)
     print_success("Schedule Phase Complete.")
-    print(scheduler_job_estimate)
         
-    print_info("Strarting Execution Queue Building...")
-    # Build execution queue relations from the schedule
-    execution_job_relations = ConcreteSchedulePhase().build_job_relations_from_schedule(
-        scheduler_job_estimate=scheduler_job_estimate,
-    )
-    print_success("Execution Queue Building Complete.")
-
-    # Combined Transpile + Execution Phase
     print_info("Starting Execution Phase (transpile merged)...")
     scheduler_job_simulation =  ConcreteExecutionPhase().execute(
-        scheduler_job_estimate,
         machines,
         execution_job_relations=execution_job_relations,
     )
-    print_success("Execution Phase Complete.")
-    capture_result_schedule.calculate_metrics(scheduler_job_simulation)
-    print_highlight(f"Execution makespan (parallel): {capture_result_schedule.makespan}")
-    print(scheduler_job_simulation)
+    
+    
+    # print_success("Execution Phase Complete.")
+    # capture_result_schedule.calculate_metrics(scheduler_job_simulation)
+    # print_highlight(f"Execution makespan (parallel): {capture_result_schedule.makespan}")
+    # print(scheduler_job_simulation)
     
     # Visualize simulated execution as a Gantt chart
-    chart = GanttChart(title="Quantum Execution (Transpiled)", x_axis_label="Time", y_axis_label="Machines")
-    chart.display(scheduler_job_simulation, machines)
-    print_highlight("Execution Gantt chart generated.")
+    # chart = GanttChart(title="Quantum Execution (Transpiled)", x_axis_label="Time", y_axis_label="Machines")
+    # chart.display(scheduler_job_simulation, machines)
+    # print_highlight("Execution Gantt chart generated.")
 
     
     # print("Starting Result Phase...")

@@ -1,88 +1,40 @@
 from collections import defaultdict
+from unittest import result
 
 from pyparsing import Dict
 from copy import deepcopy
 from typing import Any, Tuple, Dict
 import sys
-from component.dataclass.job_info import JobExecutionRelation, SchedulerJobInfo, SchedulerJobInfo, TranspiledJob, TranspiledJob
+from component.dataclass.job_info import SchedulerJobInfo, SchedulerJobInfo, TranspiledJob, TranspiledJob
 
 class PostSchedulePhase():
-    def build_job_relations(self, jobs):
-        jobs_by_machine = defaultdict(list)
-        for j in jobs:
-            jobs_by_machine[j["machine"]].append(j)
+    def execute(self, scheduler_job: Dict[str, SchedulerJobInfo], machines: Dict[str, Any]) -> Dict[str, Any]:
+        machine_map = defaultdict(list)
+        
+        for job_key, job_info in scheduler_job.items():
+            machine_map[job_info.assigned_machine].append(job_info)
+            
+        result  = {}
+        for machine, jobs in machine_map.items():
+            timestamps = set()
+            for job in jobs:
+                timestamps.add(job.scheduled_start_time)
+                timestamps.add(job.scheduled_end_time)
+            
+            sorted_times = sorted(list(timestamps))
+            machine_intervals = []
+            for i in range(len(sorted_times) - 1):
+                t_start = sorted_times[i]
+                t_end = sorted_times[i+1]
+                
+                active_jobs = [
+                    job.job_information
+                    for job in jobs 
+                    if job.scheduled_start_time <= t_start and job.scheduled_end_time >= t_end
+                ]
+                
+                if active_jobs and (not machine_intervals or machine_intervals[-1] != active_jobs):
+                    machine_intervals.append(active_jobs)
 
-        relations = []
-
-        for m, js in jobs_by_machine.items():
-            js_sorted = sorted(js, key=lambda x: (x["start"], x["end"]))
-
-            for cur in js_sorted:
-                prev_job = None
-                prev_end = None
-                for cand in js_sorted:
-                    if cand["end"] <= cur["start"]:
-                        if prev_end is None or cand["end"] > prev_end:
-                            prev_end = cand["end"]
-                            prev_job = cand["job"]
-
-                next_job = None
-                next_start = None
-                for cand in js_sorted:
-                    if cand["start"] >= cur["end"]:
-                        if next_start is None or cand["start"] < next_start:
-                            next_start = cand["start"]
-                            next_job = cand["job"]
-
-                relations.append(
-                    {
-                        "job": cur["job"],
-                        "machine": m,
-                        "prev_job_on_machine": prev_job,
-                        "next_job_on_machine": next_job,
-                    }
-                )
-
-        return relations
-
-
-    def build_job_relations_from_schedule(
-        self,
-        scheduler_job_estimate: Dict[str, SchedulerJobInfo],
-        transpiled_job: Dict[str, TranspiledJob] | None = None,
-    ) -> Dict[str, JobExecutionRelation]:
-        """
-        Build previous/next job links on each machine from scheduled jobs,
-        and attach transpilation info into a single execution-ready dataclass.
-        """
-        transpiled_job = transpiled_job or {}
-
-        jobs = []
-        for job_name, job_info in scheduler_job_estimate.items():
-            jobs.append(
-                {
-                    "job": job_name,
-                    "machine": job_info.assigned_machine,
-                    "start": job_info.scheduled_start_time,
-                    "end": job_info.scheduled_end_time,
-                }
-            )
-
-        raw_relations = self.build_job_relations(jobs)
-
-        relations_by_job: Dict[str, JobExecutionRelation] = {}
-        for rel in raw_relations:
-            job_name = rel["job"]
-            if job_name not in scheduler_job_estimate:
-                continue
-
-            relations_by_job[job_name] = JobExecutionRelation(
-                job_name=job_name,
-                machine_name=rel["machine"],
-                scheduler_job=scheduler_job_estimate[job_name],
-                transpiled_job=transpiled_job.get(job_name),
-                prev_job_on_machine=rel["prev_job_on_machine"],
-                next_job_on_machine=rel["next_job_on_machine"],
-            )
-
-        return relations_by_job
+            result[machine] = machine_intervals
+        return result
