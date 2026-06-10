@@ -21,8 +21,6 @@ class ConcreteExecutionPhase:
             machines,
             execution_job_relations,
         )
-        print("Transpilation complete. Starting execution...")
-        print(f"Transpiled job: {transpiled_job}")
         
         time_machine_execution = self.main_execution.execute(
             machines=machines,

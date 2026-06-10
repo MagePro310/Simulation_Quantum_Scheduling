@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from qiskit import QuantumCircuit
-from typing import Dict, Any
+from typing import Dict, Any, List
 # from component.c_circuit_work.cutting.width_c import SubCircuitInfo
 
 @dataclass
@@ -38,6 +38,12 @@ class TranspiledJob:
     machine_name: str | None = None
     transpiled_circuit: QuantumCircuit | None = None
     physical_layout: list[int] | None = None
+    
+@dataclass
+class TranspiledJobInfo:
+    job_info: List[JobInfo] 
+    merged_circuit: QuantumCircuit
+    transpiled_circuit: QuantumCircuit
 
     
 @dataclass
@@ -52,3 +58,4 @@ class ExecutionResult:
     execution_time: float | None = None
     shots: int = 1024
     metadata: Dict[str, Any] | None = None
+    
