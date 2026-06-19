@@ -51,11 +51,12 @@ class ExecutionResult:
     """
     Class to store execution results for a quantum job.
     """
-    job_name: str
-    counts: Dict[str, int] | None = None
-    quasi_probs: Dict[str, float] | None = None
+    job_info: JobInfo
+    assigned_machine: str | None = None
+    distribution_no_noise: Dict[str, int] | None = None
+    distribution_with_noise: Dict[str, int] | None = None
     fidelity: float | None = None
+    start_time: float | None = None
+    end_time: float | None = None
     execution_time: float | None = None
-    shots: int = 1024
-    metadata: Dict[str, Any] | None = None
     

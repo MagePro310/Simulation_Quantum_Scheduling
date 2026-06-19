@@ -1,18 +1,12 @@
-
-from math import dist
-from platform import machine
+from dataclasses import dataclass
 from typing import Any, Dict, List
-from copy import deepcopy
 
-from component.dataclass import job_info
-from component.dataclass.machine_characteristic import *
-from component.dataclass.job_info import *
-from component.dataclass.result_schedule import *
+from component.dataclass.job_info import JobInfo, TranspiledJobInfo
 from qiskit_aer import AerSimulator
 from qiskit_ibm_runtime import SamplerV2
 
 @dataclass
-class ExecutionResult:
+class MainExecutionResult:
     """
     Class to store execution results for a quantum job.
     """
@@ -22,10 +16,14 @@ class ExecutionResult:
     execution_time: float | None = None
 
 class MainExecutionQuantum:
-    def execute(self, machines: Dict[str, Any], transpiled_job: Dict[str, List[TranspiledJobInfo]]):
+    def execute(
+        self,
+        machines: Dict[str, Any],
+        transpiled_job: Dict[str, List[TranspiledJobInfo]],
+    ) -> Dict[str, List[MainExecutionResult]]:
         """Simulate the execution of the schedule on the quantum machine."""
         backend = AerSimulator()
-        executionresult: Dict[str, List[ExecutionResult]] = {}
+        executionresult: Dict[str, List[MainExecutionResult]] = {}
         for machine_name, transpiled_jobs in transpiled_job.items():
             executionresult[machine_name] = []
             for transpiled_job_info in transpiled_jobs:
@@ -39,18 +37,14 @@ class MainExecutionQuantum:
                 pub_result = sampler.run([transpiled_job_info.transpiled_circuit], shots=shots).result()[0]
                 distribution_with_noise = pub_result.data.meas.get_counts()
                 
-                executionresult[machine_name].append(ExecutionResult(
-                    job_info=transpiled_job_info.job_info,
-                    distribution_no_noise=distribution_no_noise,
-                    distribution_with_noise=distribution_with_noise,
-                    execution_time=execution_time
-                ))
-        # print("Execution complete. Results:")
-        # for machine_name, results in executionresult.items():
-        #     print(f"  {machine_name}:")
-        #     for result in results:
-        #         print(f"    Job: {result.job_info[0].job_name}")
-        #         print(f"      No Noise: {result.distribution_no_noise}")
-        #         print(f"      With Noise: {result.distribution_with_noise}")
-        #         print(f"      Execution Time: {result.execution_time}")
+                executionresult[machine_name].append(
+                    MainExecutionResult(
+                        job_info=transpiled_job_info.job_info,
+                        distribution_no_noise=distribution_no_noise,
+                        distribution_with_noise=distribution_with_noise,
+                        execution_time=execution_time,
+                    )
+                )
+
+        print("Completed execution on all machines.")
         return executionresult
