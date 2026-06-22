@@ -69,6 +69,7 @@ class PreSchedulePhase:
 
         flush_group()
         return composed
+    
     def execute(self, origin_job_info: Dict[str, JobInfo]) -> Dict[str, SchedulerJobInfo]:
         """
         Prepares the jobs for scheduling by deep copying original job info.

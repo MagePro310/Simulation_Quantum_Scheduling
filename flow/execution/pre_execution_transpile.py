@@ -1,3 +1,4 @@
+from re import X
 import sys
 sys.path.append('./')
 
@@ -7,6 +8,7 @@ from component.dataclass.job_info import JobInfo, TranspiledJobInfo
 
 from qiskit.circuit import ClassicalRegister, QuantumCircuit, QuantumRegister
 from qiskit.compiler import transpile
+from qiskit_aer import AerSimulator
 
 class PreExecution:
     def compose(self, circuits: List[Any]) -> Any:

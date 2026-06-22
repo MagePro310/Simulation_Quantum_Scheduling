@@ -1,19 +1,12 @@
+import sys
+sys.path.append('./')
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
 from component.dataclass.job_info import JobInfo, TranspiledJobInfo
 from qiskit_aer import AerSimulator
 from qiskit_ibm_runtime import SamplerV2
-
-@dataclass
-class MainExecutionResult:
-    """
-    Class to store execution results for a quantum job.
-    """
-    job_info: List[JobInfo]
-    distribution_no_noise: Dict[str, int] | None = None
-    distribution_with_noise: Dict[str, int] | None = None
-    execution_time: float | None = None
+from component.dataclass.job_info import MainExecutionResult
 
 class MainExecutionQuantum:
     def execute(

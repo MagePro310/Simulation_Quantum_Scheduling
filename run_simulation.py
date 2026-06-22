@@ -9,7 +9,7 @@ from flow.input.phase_input import ConcreteInputPhase
 from flow.schedule.phase_schedule import ConcreteSchedulePhase
 from flow.execution.phase_execution import ConcreteExecutionPhase
 # from flow.result.result_phase import ConcreteResultPhase
-from component.visualize.gantt_chart import GanttChart
+# from component.visualize.gantt_chart import GanttChart
 
 
 class TerminalColor:
@@ -51,24 +51,6 @@ def test_concrete_flow():
         machines,
         execution_job_relations=execution_job_relations,
     )
-    
-    
-    # print_success("Execution Phase Complete.")
-    # capture_result_schedule.calculate_metrics(scheduler_job_simulation)
-    # print_highlight(f"Execution makespan (parallel): {capture_result_schedule.makespan}")
-    # print(scheduler_job_simulation)
-    
-    # Visualize simulated execution as a Gantt chart
-    # chart = GanttChart(title="Quantum Execution (Transpiled)", x_axis_label="Time", y_axis_label="Machines")
-    # chart.display(scheduler_job_simulation, machines)
-    # print_highlight("Execution Gantt chart generated.")
-
-    
-    # print("Starting Result Phase...")
-    # result_phase = ConcreteResultPhase()
-    # final_result = result_phase.execute(scheduler_job, origin_job_info, data, utilization_permachine, result_Schedule)
-    # print("Result Phase Complete.")
-    
 
 if __name__ == "__main__":
     test_concrete_flow()
