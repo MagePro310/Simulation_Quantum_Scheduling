@@ -4,8 +4,6 @@ from typing import Dict, List
 
 from qiskit import QuantumCircuit
 
-from flow.schedule.circuit_adjustment import Circuit_adjustment
-
 # Add the project root to sys.path if not already there
 sys.path.append('./')
 from component.dataclass.job_info import JobInfo, SchedulerJobInfo
@@ -47,7 +45,7 @@ class PreSchedulePhase:
             if len(circuits) == 1:
                 composed.append(circuits[0])
             else:
-                composed.append(Circuit_adjustment.compose_multiple_circuits(*circuits))
+                composed.append(PreSchedulePhase.compose_multiple_circuits(*circuits))
 
         for job in jobs:
             start = job.scheduled_start_time
@@ -69,7 +67,42 @@ class PreSchedulePhase:
 
         flush_group()
         return composed
-    
+
+    @staticmethod
+    def compose_multiple_circuits(*circuits: QuantumCircuit) -> QuantumCircuit:
+        """
+        Automatically compose multiple quantum circuits using tensor product.
+
+        Args:
+            *circuits: Variable number of QuantumCircuit objects
+
+        Returns:
+            QuantumCircuit: Combined circuit using sequential tensor products
+
+        Raises:
+            ValueError: If less than 2 circuits are provided
+
+        Example:
+            qc_a = QuantumCircuit(4)
+            qc_a.x(0)
+
+            qc_b = QuantumCircuit(2, name="qc_b")
+            qc_b.y(0)
+
+            qc_c = QuantumCircuit(3, name="qc_c")
+            qc_c.h(0)
+
+            qc_combined = PreSchedulePhase.compose_multiple_circuits(qc_a, qc_b, qc_c)
+        """
+        if len(circuits) < 2:
+            raise ValueError("At least 2 circuits are required for composition")
+
+        result = circuits[0]
+        for circuit in circuits[1:]:
+            result = circuit.tensor(result)
+
+        return result
+
     def execute(self, origin_job_info: Dict[str, JobInfo]) -> Dict[str, SchedulerJobInfo]:
         """
         Prepares the jobs for scheduling by deep copying original job info.
