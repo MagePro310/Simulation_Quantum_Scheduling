@@ -73,4 +73,4 @@ class ResultOfSchedule:
             self.averageTurnaroundTime = total_turnaround_time / num_jobs
             self.averageWaitingTime = total_waiting_time / num_jobs
             self.averageResponseTime = total_response_time / num_jobs
-            self.jobCompletionRate = num_jobs / makespan
+            self.jobCompletionRate = num_jobs / makespan if makespan else 0.0

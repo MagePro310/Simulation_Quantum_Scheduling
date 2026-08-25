@@ -1,11 +1,7 @@
 from collections import defaultdict
-from unittest import result
+from typing import Any, Dict
 
-from pyparsing import Dict
-from copy import deepcopy
-from typing import Any, Tuple, Dict
-import sys
-from component.dataclass.job_info import SchedulerJobInfo, SchedulerJobInfo, TranspiledJob, TranspiledJob
+from component.dataclass.job_info import SchedulerJobInfo
 
 class PostSchedulePhase():
     def execute(self, scheduler_job: Dict[str, SchedulerJobInfo], machines: Dict[str, Any]) -> Dict[str, Any]:

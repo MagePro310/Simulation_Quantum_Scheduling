@@ -150,18 +150,56 @@ class PostExecution:
         machines: Dict[str, Any],
         scheduler_job_simulation: Dict[str, List["MainExecutionResult"]],
     ) -> dict[str, MachineExecutionResult]:
-        """Calculate qubit-time utilization for every machine."""
-        machine_ultilization: dict[str, MachineExecutionResult] = {}
-        for machine_name, execution_results in scheduler_job_simulation.items():
-            numqubit_of_machine = machines[machine_name].num_qubits
-            total_execution_time = sum(
-                float(result.execution_time or 0.0) for result in execution_results
+        """Calculate qubit-time utilization for every machine.
+
+        Utilization is the fraction of a machine's qubit-time capacity that
+        was actually consumed by scheduled jobs:
+
+            utilization = sum(group_qubits * group.execution_time)
+                          / (machine.num_qubits * sum(group.execution_time))
+
+        Iterating over ``machines`` (not ``scheduler_job_simulation``) ensures
+        idle machines with no scheduled work still appear in the result with
+        utilization 0.0, and machines with zero total execution time avoid a
+        ZeroDivisionError (also reported as 0.0).
+        """
+        machine_utilization: dict[str, MachineExecutionResult] = {}
+        for machine_name, machine in machines.items():
+            num_qubits = int(getattr(machine, "num_qubits", 0) or 0)
+            if num_qubits <= 0:
+                raise ValueError(
+                    f"Machine '{machine_name}' must have a positive num_qubits "
+                    "value to compute utilization."
+                )
+
+            execution_results = scheduler_job_simulation.get(machine_name, [])
+            total_execution_time = 0.0
+            total_qubit_time = 0.0
+            for group in execution_results:
+                execution_time = float(group.execution_time or 0.0)
+                group_qubits = 0
+                for job in group.job_info:
+                    circuit = getattr(job, "circuit", None)
+                    job_num_qubits = getattr(circuit, "num_qubits", None)
+                    if job_num_qubits is None:
+                        raise ValueError(
+                            f"Job '{getattr(job, 'job_name', job)}' on machine "
+                            f"'{machine_name}' is missing circuit.num_qubits "
+                            "information."
+                        )
+                    group_qubits += int(job_num_qubits)
+                total_qubit_time += group_qubits * execution_time
+                total_execution_time += execution_time
+
+            denominator = num_qubits * total_execution_time
+            utilization = (total_qubit_time / denominator) if denominator else 0.0
+
+            machine_utilization[machine_name] = MachineExecutionResult(
+                machine_name=machine_name,
+                utilization=utilization,
             )
-            time_job = 0
-            for job in execution_results:
-                print("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-                print(job)
-        return machine_ultilization
+
+        return machine_utilization
 
     def execute(
         self,
