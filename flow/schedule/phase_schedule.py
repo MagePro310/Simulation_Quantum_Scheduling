@@ -36,6 +36,4 @@ class ConcreteSchedulePhase():
         end_time = time.time()
         self.capture(capture_result_schedule, scheduler_job, start_time, end_time)
         execution_job_relations = self.post_phase.execute(scheduler_job, machines)
-        print("Execution job relations:")
-        print(execution_job_relations)
         return execution_job_relations

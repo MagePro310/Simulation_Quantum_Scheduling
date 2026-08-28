@@ -5,6 +5,7 @@ from component.dataclass.job_info import SchedulerJobInfo
 
 class PostSchedulePhase():
     def execute(self, scheduler_job: Dict[str, SchedulerJobInfo], machines: Dict[str, Any]) -> Dict[str, Any]:
+        print("PostSchedule: Grouping jobs by machine and execution intervals...")
         machine_map = defaultdict(list)
         
         for job_key, job_info in scheduler_job.items():

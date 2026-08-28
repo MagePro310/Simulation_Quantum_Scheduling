@@ -15,6 +15,7 @@ class MainExecutionQuantum:
         transpiled_job: Dict[str, List[TranspiledJobInfo]],
     ) -> Dict[str, List[MainExecutionResult]]:
         """Simulate the execution of the schedule on the quantum machine."""
+        print("MainExecutionQuantum: Simulating execution on quantum machines...")
         backend = AerSimulator()
         executionresult: Dict[str, List[MainExecutionResult]] = {}
         for machine_name, transpiled_jobs in transpiled_job.items():
@@ -39,5 +40,4 @@ class MainExecutionQuantum:
                     )
                 )
 
-        print("Completed execution on all machines.")
         return executionresult

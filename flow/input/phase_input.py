@@ -46,13 +46,12 @@ class ConcreteInputPhase():
                 arrival_time=0,  # For simplicity, all jobs arrive at time 0
                 priority=1,  # For simplicity, all jobs have the same priority
             )
+        print(f"Created {len(origin_job_info)} circuit jobs: {list(origin_job_info.keys())}")
 
         # capture
         capture_result_schedule.numCircuits = len(origin_job_info)
         capture_result_schedule.nameCircuits = "ghz"
         capture_result_schedule.averageQubits = sum([job.circuit.num_qubits for job in origin_job_info.values()]) / len(origin_job_info)
-
-
         return origin_job_info
 
     def setup_quantum_machines(self, capture_result_schedule: Any) -> Dict[str, Any]:
@@ -65,6 +64,9 @@ class ConcreteInputPhase():
         machines: Dict[str, Any] = {}
         machines[sim_backend.sim_machine5qubits.FakeBelemV2().name] = sim_backend.sim_machine5qubits.FakeBelemV2()
         machines[sim_backend.sim_machine5qubits.FakeBogotaV2().name] = sim_backend.sim_machine5qubits.FakeBogotaV2()
+        
+        # print
+        print(f"Available quantum machines: {list(machines.keys())}")
         
         # capture
         capture_result_schedule.nameMachines = list(machines.keys())

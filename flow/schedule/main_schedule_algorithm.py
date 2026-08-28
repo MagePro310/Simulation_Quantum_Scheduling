@@ -21,5 +21,5 @@ class MainScheduleAlgorithm():
         Returns:
             Updated scheduler_job with scheduling information.
         """
-        print("Scheduling jobs on machines using FFD algorithm...")
+        print("Main Schedule Algorithm: FFD")
         return FFD.execute(scheduler_job, machines)

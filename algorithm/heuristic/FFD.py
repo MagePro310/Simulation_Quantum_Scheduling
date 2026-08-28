@@ -178,5 +178,4 @@ class FFD:
             job_info.scheduled_start_time = start_time
             job_info.scheduled_end_time = end_time
         
-        print(scheduler_job)
         return scheduler_job

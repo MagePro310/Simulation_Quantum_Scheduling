@@ -107,7 +107,7 @@ class PreSchedulePhase:
         """
         Prepares the jobs for scheduling by deep copying original job info.
         """
-        print("Beginning Schedule Phase...")
+        print("Preschedule: Not change")
         scheduler_job: Dict[str, SchedulerJobInfo] = {}
         for job_name, job_info in origin_job_info.items():
             scheduler_job[job_name] = SchedulerJobInfo(job_information=deepcopy(job_info))

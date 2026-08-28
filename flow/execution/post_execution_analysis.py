@@ -206,13 +206,9 @@ class PostExecution:
         machines: Dict[str, Any],
         scheduler_job_simulation: Dict[str, List["MainExecutionResult"]],
     ) -> dict[str, ExecutionResult]:
-        print("Post-execution analysis begins.")
-        print(scheduler_job_simulation)
+        print("PostExecution: Analyzing execution results")
         result = self.update_job_info_with_results(scheduler_job_simulation)
         machine_ultilization = self.update_machine_info_with_results(machines, scheduler_job_simulation)
-        print("Machine utilization results:")
-        print(machine_ultilization)
         self.draw_gantt_chart(result, machines, output_path="execution_gantt_chart.png")
-        print("Post-execution analysis complete.")
 
         return result

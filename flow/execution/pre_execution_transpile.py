@@ -40,7 +40,7 @@ class PreExecution:
     def transpile_jobs(self, machines: Dict[str, Any], execution_job_relations: Dict[str, JobInfo] | None,
     ) -> Dict[str, List[TranspiledJobInfo]]:
         """Transpile jobs and attach physical layout + transpiled circuit when possible."""
-        print("Starting transpilation of jobs...")
+        print("PreExecution: Transpiling jobs for each machine...")
         # This return dict machine_name -> list of circuit, and transpiled circuit
         transpiled_job: Dict[str, List[TranspiledJobInfo]] = {}
         
@@ -52,6 +52,5 @@ class PreExecution:
                 returncircuit = self.compose(job)
                 transpiled_circuit = transpile(returncircuit, backend=machines[machine_name], scheduling_method='alap')
                 transpiled_job[machine_name].append(TranspiledJobInfo(job_info=job, merged_circuit=returncircuit, transpiled_circuit=transpiled_circuit))
-        print("Transpilation of jobs complete.")
         
         return transpiled_job
