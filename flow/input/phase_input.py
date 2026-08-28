@@ -34,7 +34,7 @@ class ConcreteInputPhase():
             Dictionary of JobInfo objects with job name as key.
         """
         # Prepare benchmark jobs: simple GHZ circuits of fixed width
-        jobs: Dict[str, Tuple[int, int]] = {"job1": (2, 1024), "job2": (2, 1024), "job3": (3, 1024), "job4": (2, 1024)}
+        jobs: Dict[str, Tuple[int, int]] = {"job1": (2, 1024), "job2": (2, 1024), "job3": (3, 1024), "job4": (2, 1024), "job5": (3, 1024), "job6": (4, 1024), "job7": (5, 1024), "job8": (2, 1024), "job9": (3, 1024), "job10": (4, 1024)}
 
         # Generate circuits and job infos
         origin_job_info: Dict[str, JobInfo] = {}
@@ -46,7 +46,11 @@ class ConcreteInputPhase():
                 arrival_time=0,  # For simplicity, all jobs arrive at time 0
                 priority=1,  # For simplicity, all jobs have the same priority
             )
-        print(f"Created {len(origin_job_info)} circuit jobs: {list(origin_job_info.keys())}")
+        # print the created jobs name: qubits
+        print("Created circuit jobs: ", end="")
+        for job_name, job_info in origin_job_info.items():
+            print(f"[{job_name}: {job_info.circuit.num_qubits} qubits] ", end="")
+        print()  # Xuống dòng sau khi in xong toàn bộ vòng lặp (nếu cần)
 
         # capture
         capture_result_schedule.numCircuits = len(origin_job_info)
@@ -65,8 +69,11 @@ class ConcreteInputPhase():
         machines[sim_backend.sim_machine5qubits.FakeBelemV2().name] = sim_backend.sim_machine5qubits.FakeBelemV2()
         machines[sim_backend.sim_machine5qubits.FakeBogotaV2().name] = sim_backend.sim_machine5qubits.FakeBogotaV2()
         
-        # print
-        print(f"Available quantum machines: {list(machines.keys())}")
+        # print the created machines name: qubits
+        print("Created quantum machines: ", end="")
+        for machine_name, machine_backend in machines.items():
+            print(f"[{machine_name}: {machine_backend.num_qubits} qubits] ", end="")
+        print()  # Xuống dòng sau khi in xong toàn bộ vòng lặp (nếu cần)
         
         # capture
         capture_result_schedule.nameMachines = list(machines.keys())

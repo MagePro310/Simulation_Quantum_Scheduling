@@ -54,11 +54,15 @@ class GanttChart:
             duration = float(end) - float(start)
             if duration <= 0: continue
 
+            num_qubits = getattr(info, "num_qubits", None)
+            label = f"{name} ({num_qubits} qubits)" if num_qubits is not None else name
+
             drawables.append({
                 'y': y_map[assigned],
                 'start': float(start),
                 'duration': duration,
                 'name': name,
+                'label': label,
                 'color': c_map.get(name, "#999999"),
                 'hatch': h_map.get(name, "")
             })
@@ -120,7 +124,7 @@ class GanttChart:
                 fontsize = 9 if num_lanes == 1 else max(6, 9 - num_lanes)
                 
                 ax.text(
-                    job['start'] + job['duration'] / 2.0, center_y, job['name'],
+                    job['start'] + job['duration'] / 2.0, center_y, job['label'],
                     va="center", ha="center", fontsize=fontsize, fontweight='bold', color=text_color,
                     bbox=dict(boxstyle="square,pad=0.2", fc=job['color'], ec="none") if num_lanes < 3 else None
                 )

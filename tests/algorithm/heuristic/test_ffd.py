@@ -55,6 +55,24 @@ def test_execute_picks_first_fitting_machine_in_dict_insertion_order():
     assert job.assigned_machine == "m1"
 
 
+def test_execute_prefers_idle_machine_over_busy_first_machine():
+    # m1 (first in dict order) is kept busy until t=100 by a large blocking job.
+    # m2 is idle the whole time. A later 2-qubit job should land on m2 at its
+    # own arrival time, not queue behind m1's backlog.
+    blocker = make_scheduler_job("blocker", num_qubits=5, depth_value=100, arrival_time=0.0)
+    job = make_scheduler_job("job", num_qubits=2, depth_value=1, arrival_time=1.0)
+
+    FFD.execute(
+        {"blocker": blocker, "job": job},
+        {"m1": make_machine(5), "m2": make_machine(5)},
+    )
+
+    assert blocker.assigned_machine == "m1"
+    assert job.assigned_machine == "m2"
+    assert job.scheduled_start_time == 1.0
+    assert job.scheduled_end_time == 2.0
+
+
 def test_execute_co_schedules_two_jobs_on_same_machine_when_capacity_allows():
     j1 = make_scheduler_job("j1", num_qubits=2, depth_value=2, arrival_time=0.0)
     j2 = make_scheduler_job("j2", num_qubits=2, depth_value=2, arrival_time=0.0)

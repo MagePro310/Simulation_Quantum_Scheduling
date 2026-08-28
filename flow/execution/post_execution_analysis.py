@@ -112,7 +112,7 @@ class PostExecution:
                     updated_job_info[job_info.job_name] = execution_result
         return updated_job_info
 
-    def draw_gantt_chart(
+    def _draw_gantt_chart(
         self,
         execution_results: dict[str, ExecutionResult],
         machines: Dict[str, Any] | None = None,
@@ -130,13 +130,15 @@ class PostExecution:
                 for machine_name in sorted(machine_names)
             }
 
-        gantt_input = {}
-        for job_name, result in execution_results.items():
-            gantt_input[job_name] = SimpleNamespace(
+        gantt_input = {
+            job_name: SimpleNamespace(
                 assigned_machine=result.assigned_machine,
                 scheduled_start_time=result.start_time,
                 scheduled_end_time=result.end_time,
+                num_qubits=getattr(getattr(result.job_info, "circuit", None), "num_qubits", None),
             )
+            for job_name, result in execution_results.items()
+        }
 
         chart = GanttChart(
             title="Quantum Execution (Transpiled)",
@@ -209,6 +211,7 @@ class PostExecution:
         print("PostExecution: Analyzing execution results")
         result = self.update_job_info_with_results(scheduler_job_simulation)
         machine_ultilization = self.update_machine_info_with_results(machines, scheduler_job_simulation)
-        self.draw_gantt_chart(result, machines, output_path="execution_gantt_chart.png")
+        print(result)
+        self._draw_gantt_chart(result, machines, output_path="execution_gantt_chart.png")
 
         return result

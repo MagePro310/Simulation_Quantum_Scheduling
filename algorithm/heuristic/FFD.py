@@ -44,29 +44,35 @@ class FFD:
         job_info: SchedulerJobInfo,
         machine_states: list[Dict[str, Any]],
     ) -> Dict[str, Any] | None:
+        """Find the machine that can host the job soonest.
+
+        Scans every machine with enough qubits, computes its earliest
+        feasible start time via `_earliest_start_for_machine`, and picks the
+        machine with the smallest one. Ties (e.g. multiple idle machines)
+        are broken by machine order, preserving first-fit semantics. This
+        avoids sticking a job on the first machine in order just because it
+        *eventually* has room, while another machine could start it sooner.
+        """
         required_qubits = FFD._job_qubits(job_info)
         arrival_time = FFD._job_arrival_time(job_info)
 
-        # First try to fit at arrival_time on the first machine in order
-        for machine_state in machine_states:
-            if FFD._machine_qubits(machine_state['machine']) < required_qubits:
-                continue
-            duration = float(max(1.0, getattr(job_info.job_information.circuit, 'depth', lambda: 1)()))
-            start = arrival_time
-            end = start + duration
-            if FFD._capacity_available(machine_state, start, end, required_qubits):
-                return machine_state
+        best_machine_state = None
+        best_start = None
 
-        # Otherwise, find earliest slot per machine (first-fit by machine order)
         for machine_state in machine_states:
             if FFD._machine_qubits(machine_state['machine']) < required_qubits:
                 continue
             earliest = FFD._earliest_start_for_machine(machine_state, arrival_time, job_info, required_qubits)
-            if earliest is not None:
-                machine_state.setdefault('_candidate_start', earliest)
-                return machine_state
+            if earliest is None:
+                continue
+            if best_start is None or earliest < best_start:
+                best_start = earliest
+                best_machine_state = machine_state
 
-        return None
+        if best_machine_state is not None:
+            best_machine_state['_candidate_start'] = best_start
+
+        return best_machine_state
 
     @staticmethod
     def _capacity_available(machine_state: Dict[str, Any], start: float, end: float, required_qubits: int) -> bool:
@@ -162,7 +168,7 @@ class FFD:
                 # otherwise, try at arrival or the machine's latest end
                 start_time = arrival_time
 
-            execution_time = float(max(1.0, float(estimated_schedule(circuit, shots=shots))))
+            execution_time = shots * float(max(1.0, float(estimated_schedule(circuit, shots=shots))))
             end_time = start_time + execution_time
 
             # Record allocation on machine

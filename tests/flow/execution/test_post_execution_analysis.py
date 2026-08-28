@@ -123,7 +123,7 @@ def test_draw_gantt_chart_writes_png(tmp_path):
         ),
     }
 
-    PostExecution().draw_gantt_chart(execution_results, output_path=str(output_path))
+    PostExecution()._draw_gantt_chart(execution_results, output_path=str(output_path))
 
     assert output_path.exists()
     assert output_path.stat().st_size > 0
