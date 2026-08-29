@@ -19,6 +19,7 @@ class PostSchedulePhase():
                 scheduled_start_time=job.scheduled_start_time,
                 scheduled_end_time=job.scheduled_end_time,
                 num_qubits=getattr(getattr(job.job_information, "circuit", None), "num_qubits", None),
+                shots=getattr(job.job_information, "shots", None),
             )
             for job_name, job in scheduler_job.items()
         }

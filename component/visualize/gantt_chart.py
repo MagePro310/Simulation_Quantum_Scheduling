@@ -55,7 +55,14 @@ class GanttChart:
             if duration <= 0: continue
 
             num_qubits = getattr(info, "num_qubits", None)
-            label = f"{name} ({num_qubits} qubits)" if num_qubits is not None else name
+            shots = getattr(info, "shots", None)
+
+            details = []
+            if num_qubits is not None:
+                details.append(f"{num_qubits} qubits")
+            if shots is not None:
+                details.append(f"{shots} shots")
+            label = f"{name} ({', '.join(details)})" if details else name
 
             drawables.append({
                 'y': y_map[assigned],

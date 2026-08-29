@@ -136,6 +136,7 @@ class PostExecution:
                 scheduled_start_time=result.start_time,
                 scheduled_end_time=result.end_time,
                 num_qubits=getattr(getattr(result.job_info, "circuit", None), "num_qubits", None),
+                shots=getattr(result.job_info, "shots", None),
             )
             for job_name, result in execution_results.items()
         }
