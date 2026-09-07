@@ -5,8 +5,8 @@ import time
 import sys
 from copy import deepcopy
 
-from algorithm.heuristic.FFD import FFD
-from component.dataclass.job_info import SchedulerJobInfo
+from source.algorithm.heuristic.FFD import FFD
+from source.component.dataclass.job_info import SchedulerJobInfo
 
 
 class MainScheduleAlgorithm():

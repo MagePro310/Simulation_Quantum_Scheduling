@@ -4,7 +4,7 @@ import sys
 
 # Add the project root to sys.path if not already there
 sys.path.append('./')
-from component.ibm_simulator import sim_backend
+from source.component.ibm_simulator import sim_backend
 
 @dataclass
 class MachineCharacteristic:

@@ -3,10 +3,10 @@ sys.path.append('./')
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
-from component.dataclass.job_info import JobInfo, TranspiledJobInfo
+from source.component.dataclass.job_info import JobInfo, TranspiledJobInfo
 from qiskit_aer import AerSimulator
 from qiskit_ibm_runtime import SamplerV2
-from component.dataclass.job_info import MainExecutionResult
+from source.component.dataclass.job_info import MainExecutionResult
 
 class MainExecutionQuantum:
     def execute(

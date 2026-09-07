@@ -6,8 +6,8 @@ import sys
 sys.path.append('./')
 
 from mqt.bench import BenchmarkLevel, get_benchmark
-from component.dataclass.job_info import JobInfo
-from component.ibm_simulator import sim_backend
+from source.component.dataclass.job_info import JobInfo
+from source.component.ibm_simulator import sim_backend
 
 
 class ConcreteInputPhase():

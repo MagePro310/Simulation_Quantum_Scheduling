@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Dict
-from component.dataclass.job_info import SchedulerJobInfo
+from source.component.dataclass.job_info import SchedulerJobInfo
 
 @dataclass
 class ResultOfSchedule:

@@ -4,12 +4,12 @@ sys.path.append('./')
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
-from component.dataclass.job_info import ExecutionResult, MachineExecutionResult
-from component.visualize.gantt_chart import GanttChart
+from source.component.dataclass.job_info import ExecutionResult, MachineExecutionResult
+from source.component.visualize.gantt_chart import GanttChart
 from qiskit.quantum_info.analysis import hellinger_fidelity
 from qiskit.result import marginal_counts
 
-from flow.execution.main_execution_quantum import MainExecutionResult
+from source.flow.execution.main_execution_quantum import MainExecutionResult
 
 
 class PostExecution:

@@ -6,7 +6,7 @@ from qiskit import QuantumCircuit
 
 # Add the project root to sys.path if not already there
 sys.path.append('./')
-from component.dataclass.job_info import JobInfo, SchedulerJobInfo
+from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
 
 class PreSchedulePhase:
     @staticmethod

@@ -3,7 +3,7 @@ sys.path.append('./')
 
 from typing import Any, Dict, List
 
-from component.dataclass.job_info import JobInfo, TranspiledJobInfo
+from source.component.dataclass.job_info import JobInfo, TranspiledJobInfo
 
 from qiskit.circuit import ClassicalRegister, QuantumCircuit, QuantumRegister
 from qiskit.compiler import transpile

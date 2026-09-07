@@ -2,8 +2,8 @@ from collections import defaultdict
 from types import SimpleNamespace
 from typing import Any, Dict
 
-from component.dataclass.job_info import SchedulerJobInfo
-from component.visualize.gantt_chart import GanttChart
+from source.component.dataclass.job_info import SchedulerJobInfo
+from source.component.visualize.gantt_chart import GanttChart
 
 class PostSchedulePhase():
     def execute(

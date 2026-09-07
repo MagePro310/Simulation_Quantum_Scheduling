@@ -2,10 +2,10 @@ import sys
 # Add the project root to sys.path
 sys.path.append('/home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/')
 
-from component.dataclass.result_schedule import ResultOfSchedule
-from flow.input.phase_input import ConcreteInputPhase
-from flow.schedule.phase_schedule import ConcreteSchedulePhase
-from flow.execution.phase_execution import ConcreteExecutionPhase
+from source.component.dataclass.result_schedule import ResultOfSchedule
+from source.flow.input.phase_input import ConcreteInputPhase
+from source.flow.schedule.phase_schedule import ConcreteSchedulePhase
+from source.flow.execution.phase_execution import ConcreteExecutionPhase
 # from flow.result.result_phase import ConcreteResultPhase
 # from component.visualize.gantt_chart import GanttChart
 

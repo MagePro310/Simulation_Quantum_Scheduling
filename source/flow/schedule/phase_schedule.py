@@ -4,15 +4,15 @@ import time
 import sys
 from copy import deepcopy
 
-from flow.schedule.post_schedule import PostSchedulePhase
-from flow.schedule.pre_schedule import PreSchedulePhase
-from flow.schedule.main_schedule_algorithm import MainScheduleAlgorithm
+from source.flow.schedule.post_schedule import PostSchedulePhase
+from source.flow.schedule.pre_schedule import PreSchedulePhase
+from source.flow.schedule.main_schedule_algorithm import MainScheduleAlgorithm
 # Add the project root to sys.path if not already there
 sys.path.append('./')
 from collections import defaultdict
-from component.dataclass.job_info import JobInfo, SchedulerJobInfo
-from algorithm.heuristic.FFD import FFD
-from component.dataclass.job_info import SchedulerJobInfo, TranspiledJob
+from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
+from source.algorithm.heuristic.FFD import FFD
+from source.component.dataclass.job_info import SchedulerJobInfo, TranspiledJob
 
     
 class ConcreteSchedulePhase():

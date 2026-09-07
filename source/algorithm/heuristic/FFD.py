@@ -4,8 +4,8 @@ import sys
 # Add the project root to sys.path if not already there
 sys.path.append('./')
 
-from component.dataclass.job_info import SchedulerJobInfo
-from flow.schedule.estimated import estimated_schedule
+from source.component.dataclass.job_info import SchedulerJobInfo
+from source.flow.schedule.estimated import estimated_schedule
 
 class FFD:
     """
