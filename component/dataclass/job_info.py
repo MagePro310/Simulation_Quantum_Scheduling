@@ -1,7 +1,7 @@
 from dataclasses import dataclass
-from numpy import average
-from qiskit import QuantumCircuit
-from typing import Dict, Any, List
+# Qiskit 2.3 does not ship typing metadata or stubs.
+from qiskit import QuantumCircuit  # pyright: ignore[reportMissingTypeStubs]
+from typing import Dict, List
 # from component.c_circuit_work.cutting.width_c import SubCircuitInfo
 
 @dataclass
@@ -10,17 +10,17 @@ class JobInfo:
     Class to store job information.
     """
     # Basic information
-    job_name: str = None
-    circuit: QuantumCircuit = None
-    shots: int = None
+    job_name: str | None = None
+    circuit: QuantumCircuit | None = None
+    shots: int | None = None
 
     # Help for scheduler
-    arrival_time: float = None
-    priority: int = None
+    arrival_time: float | None = None
+    priority: int | None = None
     
     # Help for cut
-    parentJob: 'JobInfo' = None
-    childrenJobs: dict[str, 'JobInfo'] = None
+    parentJob: 'JobInfo | None' = None
+    childrenJobs: dict[str, 'JobInfo'] | None = None
         
 @dataclass
 class SchedulerJobInfo:
@@ -28,14 +28,14 @@ class SchedulerJobInfo:
     Class to store scheduler job information.
     """
 
-    job_information: JobInfo = None
+    job_information: JobInfo | None = None
     scheduled_start_time: float = 0
     scheduled_end_time: float = 0
-    assigned_machine: str = None
+    assigned_machine: str | None = None
     
 @dataclass
 class TranspiledJob:
-    job_information: JobInfo = None
+    job_information: JobInfo | None = None
     machine_name: str | None = None
     transpiled_circuit: QuantumCircuit | None = None
     physical_layout: list[int] | None = None

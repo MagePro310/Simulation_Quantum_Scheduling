@@ -1,6 +1,4 @@
 import sys
-import os
-
 # Add the project root to sys.path
 sys.path.append('/home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/')
 
@@ -36,18 +34,19 @@ def test_concrete_flow():
     capture_result_schedule = ResultOfSchedule()
     # Input Phase
     print_info("Starting Input Phase...")
-    # Create circuit jobs
+    # Create circuit jobs (notchanged))
     input_job, machines = ConcreteInputPhase().create_input(capture_result_schedule)
     print_success("Input Phase Complete.")
     
-    # Schedule Phase
+    # Schedule Phase (change algorithm here)
     print_info("Starting Schedule Phase...")
     # Schedule jobs on machines
     execution_job_relations = ConcreteSchedulePhase().execute(input_job, machines, capture_result_schedule)
     print_success("Schedule Phase Complete.")
 
+    # Execution Phase (not changed)
     print_info("Starting Execution Phase (transpile merged)...")
-    scheduler_job_simulation =  ConcreteExecutionPhase().execute(
+    ConcreteExecutionPhase().execute(
         machines,
         execution_job_relations=execution_job_relations,
     )

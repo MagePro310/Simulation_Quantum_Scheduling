@@ -1,5 +1,5 @@
-from dataclasses import dataclass, field
-from typing import Optional, Dict
+from dataclasses import dataclass
+from typing import Dict
 from component.dataclass.job_info import SchedulerJobInfo
 
 @dataclass
@@ -47,8 +47,13 @@ class ResultOfSchedule:
         num_jobs = len(scheduler_job)
 
         if num_jobs > 0:
-            for job_name, s_job in scheduler_job.items():
-                arrival_time = s_job.job_information.arrival_time if s_job.job_information.arrival_time is not None else 0.0
+            for s_job in scheduler_job.values():
+                job_information = s_job.job_information
+                arrival_time = (
+                    job_information.arrival_time
+                    if job_information is not None and job_information.arrival_time is not None
+                    else 0.0
+                )
                 
                 # Makespan is the max end time
                 if s_job.scheduled_end_time > makespan:
