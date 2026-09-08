@@ -139,5 +139,4 @@ class FFD:
                 for job in packed.jobs.values()
                 if job.job_information is not None
             ]
-        print(scheduler_job)
         return scheduler_job

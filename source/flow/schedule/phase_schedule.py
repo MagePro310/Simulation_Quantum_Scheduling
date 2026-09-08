@@ -10,7 +10,6 @@ from source.flow.schedule.pre_schedule import PreSchedulePhase
 from source.flow.schedule.main_schedule_algorithm import MainScheduleAlgorithm
 
 from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
-from source.component.dataclass.job_info import SchedulerJobInfo
     
 class ConcreteSchedulePhase():
     """Schedule quantum circuits on available machines."""
@@ -37,4 +36,3 @@ class ConcreteSchedulePhase():
     def _capture(self, capture_result_schedule: Any, scheduler_job: Dict[str, SchedulerJobInfo], start_time: float, end_time: float):
         capture_result_schedule.nameSchedule = self.algorithm.__class__.__name__ if self.algorithm is not None else "DefaultAlgorithm"
         capture_result_schedule.ScheduleLatency = end_time - start_time
-        capture_result_schedule.calculate_metrics(scheduler_job)

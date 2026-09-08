@@ -1,218 +1,239 @@
-from platform import machine
-import sys
-sys.path.append('./')
-from types import SimpleNamespace
-from typing import Any, Dict, List
+"""Validate batch outcomes and report the realized execution timeline."""
 
-from source.component.dataclass.job_info import ExecutionResult, MachineExecutionResult
-from source.component.help_function.gantt_chart import GanttChart
+from collections import Counter
+from typing import Any
+
 from qiskit.quantum_info.analysis import hellinger_fidelity
-from qiskit.result import marginal_counts
 
-from source.flow.execution.main_execution_quantum import MainExecutionResult
+from source.component.dataclass.execution_info import (
+    BatchCounts,
+    ExecutionSummary,
+    MachineExecutionResult,
+    PreparedBatch,
+)
+from source.component.dataclass.job_info import ExecutionResult
 
 
 class PostExecution:
-    @staticmethod
-    def _job_result_width(job_info: Any) -> int | None:
-        """Return the number of classical result bits owned by a job."""
-        circuit = getattr(job_info, "circuit", None)
-        if circuit is None:
-            return None
+    def split_counts(
+        self, prepared: PreparedBatch, counts: BatchCounts, shots: int,
+    ) -> dict[str, BatchCounts]:
+        """Validate both runs before marginalizing their explicit classical map.
 
-        num_clbits = int(getattr(circuit, "num_clbits", 0) or 0)
-        if num_clbits:
-            return num_clbits
-
-        # This fallback supports circuit-like test doubles that only expose
-        # their qubit count. Executed Qiskit circuits normally have clbits.
-        num_qubits = int(getattr(circuit, "num_qubits", 0) or 0)
-        return num_qubits or None
-
-    def _job_distributions(
-        self,
-        merged_result: "MainExecutionResult",
-    ) -> list[tuple[Any, dict[str, int] | None, dict[str, int] | None]]:
-        """Marginalize a merged count distribution back to each input job."""
-        jobs = list(merged_result.job_info or [])
-        widths = [self._job_result_width(job_info) for job_info in jobs]
-
-        # Keep compatibility for incomplete result objects where the original
-        # circuit layout is unavailable and therefore cannot be marginalized.
-        if any(width is None for width in widths):
-            return [
-                (
-                    job_info,
-                    merged_result.distribution_no_noise,
-                    merged_result.distribution_with_noise,
-                )
-                for job_info in jobs
-            ]
-
-        job_distributions = []
-        bit_offset = 0
-        for job_info, width in zip(jobs, widths):
-            bit_indices = list(range(bit_offset, bit_offset + width))
-            distribution_no_noise = (
-                dict(marginal_counts(merged_result.distribution_no_noise, bit_indices))
-                if merged_result.distribution_no_noise is not None
-                else None
-            )
-            distribution_with_noise = (
-                dict(marginal_counts(merged_result.distribution_with_noise, bit_indices))
-                if merged_result.distribution_with_noise is not None
-                else None
-            )
-            job_distributions.append(
-                (job_info, distribution_no_noise, distribution_with_noise)
-            )
-            bit_offset += width
-
-        return job_distributions
-
-    def update_job_info_with_results(
-        self,
-        scheduler_job_simulation: Dict[str, List["MainExecutionResult"]],
-    ) -> dict[str, ExecutionResult]:
-        """Update the job info with execution results."""
-        updated_job_info: dict[str, ExecutionResult] = {}
-        for machine_name, execution_results in scheduler_job_simulation.items():
-            current_machine_time = 0.0
-            for merged_result in execution_results:
-                execution_time = float(merged_result.execution_time or 0.0)
-                start_time = current_machine_time
-                end_time = start_time + execution_time
-                current_machine_time = end_time
-
-                for (
-                    job_info,
-                    distribution_no_noise,
-                    distribution_with_noise,
-                ) in self._job_distributions(merged_result):
-                    fidelity = None
-                    if (
-                        distribution_no_noise is not None
-                        and distribution_with_noise is not None
-                    ):
-                        fidelity = hellinger_fidelity(
-                            distribution_no_noise,
-                            distribution_with_noise,
-                        )
-
-                    execution_result = ExecutionResult(
-                        job_info=job_info,
-                        assigned_machine=machine_name,
-                        distribution_no_noise=distribution_no_noise,
-                        distribution_with_noise=distribution_with_noise,
-                        fidelity=fidelity,
-                        start_time=start_time,
-                        end_time=end_time,
-                        execution_time=execution_time,
-                    )
-                    updated_job_info[job_info.job_name] = execution_result
-        return updated_job_info
-
-    def _draw_gantt_chart(
-        self,
-        execution_results: dict[str, ExecutionResult],
-        machines: Dict[str, Any] | None = None,
-        output_path: str = "execution_gantt_chart.png",
-    ) -> None:
-        """Draw a Gantt chart for final execution results."""
-        if machines is None:
-            machine_names = {
-                result.assigned_machine
-                for result in execution_results.values()
-                if result.assigned_machine is not None
-            }
-            machines = {
-                machine_name: SimpleNamespace(name=machine_name)
-                for machine_name in sorted(machine_names)
-            }
-
-        gantt_input = {
-            job_name: SimpleNamespace(
-                assigned_machine=result.assigned_machine,
-                scheduled_start_time=result.start_time,
-                scheduled_end_time=result.end_time,
-                num_qubits=getattr(getattr(result.job_info, "circuit", None), "num_qubits", None),
-                shots=getattr(result.job_info, "shots", None),
-            )
-            for job_name, result in execution_results.items()
-        }
-
-        chart = GanttChart(
-            title="Quantum Execution (Transpiled)",
-            x_axis_label="Time",
-            y_axis_label="Machines",
-        )
-        chart.display(gantt_input, machines, output_path=output_path)
-
-    def update_machine_info_with_results(
-        self,
-        machines: Dict[str, Any],
-        scheduler_job_simulation: Dict[str, List["MainExecutionResult"]],
-    ) -> dict[str, MachineExecutionResult]:
-        """Calculate qubit-time utilization for every machine.
-
-        Utilization is the fraction of a machine's qubit-time capacity that
-        was actually consumed by scheduled jobs:
-
-            utilization = sum(group_qubits * group.execution_time)
-                          / (machine.num_qubits * sum(group.execution_time))
-
-        Iterating over ``machines`` (not ``scheduler_job_simulation``) ensures
-        idle machines with no scheduled work still appear in the result with
-        utilization 0.0, and machines with zero total execution time avoid a
-        ZeroDivisionError (also reported as 0.0).
+        Mapping entries list merged bit indices in each job's local bit order
+        (bit zero first). Count strings use Qiskit's most significant bit first
+        convention; spaces separating classical registers are accepted.
         """
-        machine_utilization: dict[str, MachineExecutionResult] = {}
+        if type(shots) is not int or shots <= 0:
+            raise ValueError("Batch shots must be a positive integer")
+        width = self._validate_classical_mapping(prepared)
+        validated = [
+            self._validate_count_distribution(label, distribution, width, shots)
+            for label, distribution in (
+                ("ideal", counts.distribution_no_noise),
+                ("noisy", counts.distribution_with_noise),
+            )
+        ]
+
+        split = {}
+        for job_id in prepared.job_ids:
+            bits = prepared.classical_bits[job_id]
+            distributions = [
+                self._marginalize_counts(distribution, bits, width)
+                for distribution in validated
+            ]
+            split[job_id] = BatchCounts(*distributions)
+        return split
+
+    @staticmethod
+    def _validate_classical_mapping(prepared: PreparedBatch) -> int:
+        """Validate the per-job bit partition and return the merged width."""
+        width = prepared.merged_circuit.num_clbits
+        if width <= 0 or prepared.transpiled_circuit.num_clbits != width:
+            raise ValueError("Merged and transpiled classical widths must agree and be positive")
+        if not prepared.job_ids or len(set(prepared.job_ids)) != len(prepared.job_ids):
+            raise ValueError("Prepared batch must have unique job IDs")
+        if set(prepared.classical_bits) != set(prepared.job_ids):
+            raise ValueError("Classical bit mappings must cover exactly the batch jobs")
+
+        all_bits = []
+        for job_id in prepared.job_ids:
+            bits = prepared.classical_bits[job_id]
+            if not bits or any(type(bit) is not int or not 0 <= bit < width for bit in bits):
+                raise ValueError(f"Invalid classical bit mapping for job {job_id!r}")
+            all_bits.extend(bits)
+        if len(all_bits) != width or len(set(all_bits)) != width:
+            raise ValueError("Classical bit mappings must partition the merged result bits")
+        return width
+
+    @staticmethod
+    def _validate_count_distribution(
+        label: str, distribution: dict[str, int], width: int, shots: int,
+    ) -> Counter[str]:
+        """Validate a complete run, merging keys that differ only by spaces."""
+        if not isinstance(distribution, dict) or not distribution:
+            raise ValueError(f"The {label} batch distribution must be a nonempty count dictionary")
+        normalized: Counter[str] = Counter()
+        for key, count in distribution.items():
+            if not isinstance(key, str):
+                raise ValueError(f"The {label} batch outcome must be a binary string")
+            bitstring = key.replace(" ", "")
+            if len(bitstring) != width or any(bit not in "01" for bit in bitstring):
+                raise ValueError(f"The {label} outcome {key!r} does not match the merged classical width")
+            if type(count) is not int or count < 0:
+                raise ValueError(f"The {label} counts must be nonnegative integers")
+            normalized[bitstring] += count
+        if sum(normalized.values()) != shots:
+            raise ValueError(f"The {label} batch distribution must contain exactly {shots} shots")
+        return normalized
+
+    @staticmethod
+    def _marginalize_counts(
+        distribution: Counter[str], bits: tuple[int, ...], width: int,
+    ) -> dict[str, int]:
+        """Project a validated run into a job's local classical bit order."""
+        marginal: Counter[str] = Counter()
+        for bitstring, count in distribution.items():
+            local_bits = "".join(bitstring[width - 1 - bit] for bit in reversed(bits))
+            marginal[local_bits] += count
+        return dict(marginal)
+
+    def finalize(
+        self,
+        machines: dict[str, Any],
+        results: dict[str, ExecutionResult],
+        summary: ExecutionSummary,
+        *,
+        capture_result_schedule: Any = None,
+        gantt_output_path: str | None = None,
+    ) -> None:
+        """Populate metrics from completed jobs and all recorded batch intervals."""
+        self._populate_job_metrics(results, summary)
+        self._populate_machine_metrics(machines, summary)
+
+        if capture_result_schedule is not None:
+            if callable(getattr(capture_result_schedule, "capture_execution", None)):
+                capture_result_schedule.capture_execution(summary)
+            else:
+                capture_result_schedule.execution_summary = summary
+        if gantt_output_path is not None:
+            self._draw_gantt_chart(machines, results, summary, gantt_output_path)
+
+    @staticmethod
+    def _populate_job_metrics(
+        results: dict[str, ExecutionResult], summary: ExecutionSummary,
+    ) -> None:
+        """Reset job metrics, then aggregate timings and fidelity of successes."""
+        succeeded = [result for result in results.values() if result.status == "SUCCEEDED"]
+        summary.succeeded_jobs = len(succeeded)
+        summary.failed_jobs = sum(result.status == "FAILED" for result in results.values())
+        summary.blocked_jobs = sum(result.status == "BLOCKED" for result in results.values())
+        summary.total_turnaround_time = 0.0
+        summary.total_waiting_time = 0.0
+        summary.total_response_time = 0.0
+
+        for result in results.values():
+            result.fidelity = None
+        for result in succeeded:
+            if result.start_time is None or result.end_time is None or result.execution_time is None:
+                raise ValueError("Successful jobs must have complete execution timings")
+            arrival = result.job_info.arrival_time or 0.0
+            turnaround = result.end_time - arrival
+            summary.total_turnaround_time += turnaround
+            summary.total_waiting_time += max(0.0, turnaround - result.execution_time)
+            summary.total_response_time += result.start_time - arrival
+            if result.distribution_no_noise and result.distribution_with_noise:
+                result.fidelity = float(hellinger_fidelity(
+                    result.distribution_no_noise, result.distribution_with_noise,
+                ))
+
+        count = summary.succeeded_jobs
+        summary.average_turnaround_time = summary.total_turnaround_time / count if count else 0.0
+        summary.average_waiting_time = summary.total_waiting_time / count if count else 0.0
+        summary.average_response_time = summary.total_response_time / count if count else 0.0
+        summary.job_completion_rate = count / summary.makespan if summary.makespan else 0.0
+        fidelities = [result.fidelity for result in succeeded if result.fidelity is not None]
+        summary.average_fidelity = sum(fidelities) / len(fidelities) if fidelities else 0.0
+
+    @staticmethod
+    def _populate_machine_metrics(
+        machines: dict[str, Any], summary: ExecutionSummary,
+    ) -> None:
+        """Include every recorded batch, including failed runs, in utilization."""
+        summary.machines = {}
         for machine_name, machine in machines.items():
-            num_qubits = int(getattr(machine, "num_qubits", 0) or 0)
-            if num_qubits <= 0:
-                raise ValueError(
-                    f"Machine '{machine_name}' must have a positive num_qubits "
-                    "value to compute utilization."
-                )
-
-            execution_results = scheduler_job_simulation.get(machine_name, [])
-            total_execution_time = 0.0
-            total_qubit_time = 0.0
-            for group in execution_results:
-                execution_time = float(group.execution_time or 0.0)
-                group_qubits = 0
-                for job in group.job_info:
-                    circuit = getattr(job, "circuit", None)
-                    job_num_qubits = getattr(circuit, "num_qubits", None)
-                    if job_num_qubits is None:
-                        raise ValueError(
-                            f"Job '{getattr(job, 'job_name', job)}' on machine "
-                            f"'{machine_name}' is missing circuit.num_qubits "
-                            "information."
-                        )
-                    group_qubits += int(job_num_qubits)
-                total_qubit_time += group_qubits * execution_time
-                total_execution_time += execution_time
-
-            denominator = num_qubits * total_execution_time
-            utilization = (total_qubit_time / denominator) if denominator else 0.0
-
-            machine_utilization[machine_name] = MachineExecutionResult(
+            records = [batch for batch in summary.batches if batch.machine_name == machine_name]
+            busy_time = sum(batch.end_time - batch.start_time for batch in records)
+            qubit_time = sum(
+                (batch.end_time - batch.start_time) * batch.logical_qubits for batch in records
+            )
+            denominator = machine.capacity * summary.makespan
+            summary.machines[machine_name] = MachineExecutionResult(
                 machine_name=machine_name,
-                utilization=utilization,
+                busy_time=busy_time,
+                qubit_time=qubit_time,
+                utilization=qubit_time / denominator if denominator else 0.0,
             )
 
-        return machine_utilization
+    @staticmethod
+    def _draw_gantt_chart(
+        machines: dict[str, Any], results: dict[str, ExecutionResult],
+        summary: ExecutionSummary, output_path: str,
+    ) -> None:
+        """Draw separate job lanes so repeated batches remain visible."""
+        import matplotlib
+        matplotlib.use("Agg")
+        from matplotlib import pyplot as plt
 
-    def execute(
-        self,
-        machines: Dict[str, Any],
-        scheduler_job_simulation: Dict[str, List["MainExecutionResult"]],
-    ) -> dict[str, ExecutionResult]:
-        print("PostExecution: Analyzing execution results")
-        result = self.update_job_info_with_results(scheduler_job_simulation)
-        machine_ultilization = self.update_machine_info_with_results(machines, scheduler_job_simulation)
-        print(result)
-        self._draw_gantt_chart(result, machines, output_path="execution_gantt_chart.png")
+        lanes = [
+            (machine_name, job_id)
+            for machine_name in machines
+            for job_id, result in results.items()
+            if result.assigned_machine == machine_name
+        ]
+        lane_indices = {lane: index for index, lane in enumerate(lanes)}
+        palette = ["#0072B2", "#E69F00", "#009E73", "#CC79A7", "#56B4E9", "#D55E00"]
+        colors = {job_id: palette[index % len(palette)] for index, job_id in enumerate(results)}
+        figure, axis = plt.subplots(figsize=(12, max(3, 0.65 * len(lanes) + 1.5)))
+        try:
+            for batch in summary.batches:
+                batch_lanes = [lane_indices[(batch.machine_name, job_id)] for job_id in batch.job_ids]
+                for job_id, lane in zip(batch.job_ids, batch_lanes):
+                    duration = batch.end_time - batch.start_time
+                    if duration > 0:
+                        axis.barh(
+                            lane, duration, left=batch.start_time, height=0.65,
+                            color=colors[job_id], edgecolor="black",
+                            hatch="//" if batch.status == "FAILED" else None,
+                        )
+                    else:
+                        axis.plot(batch.start_time, lane, marker="x", color="red")
+                    axis.annotate(
+                        f"B{batch.batch_id}: {batch.shots} shots · {batch.status}",
+                        (batch.start_time + duration / 2, lane), ha="center", va="center", fontsize=8,
+                    )
+                if batch_lanes:
+                    axis.vlines(
+                        [batch.start_time, batch.end_time], min(batch_lanes) - 0.4,
+                        max(batch_lanes) + 0.4, colors="0.35", linestyles="dotted", linewidth=0.8,
+                    )
 
-        return result
+            axis.set_yticks(range(len(lanes)), [
+                f"{machine_name} / {job_id} [{results[job_id].status}]"
+                for machine_name, job_id in lanes
+            ])
+            axis.invert_yaxis()
+            extent = summary.makespan if summary.makespan > 0 else 1e-6
+            margin = max(extent * 0.04, 1e-12)
+            axis.set_xlim(-margin, extent + margin)
+            axis.set_xlabel("Virtual execution time (seconds)")
+            axis.set_ylabel("Machine / job")
+            axis.set_title("Quantum execution batches")
+            axis.ticklabel_format(axis="x", style="sci", scilimits=(-3, 3), useOffset=False)
+            axis.grid(axis="x", alpha=0.25)
+            if not lanes:
+                axis.text(0.5, 0.5, "No execution jobs", transform=axis.transAxes, ha="center")
+            figure.tight_layout()
+            figure.savefig(output_path, dpi=160)
+        finally:
+            plt.close(figure)
