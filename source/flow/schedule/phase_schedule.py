@@ -1,39 +1,40 @@
-from abc import ABC, abstractmethod
-from typing import Any, Dict, Tuple
-import time
 import sys
-from copy import deepcopy
 
-from source.flow.schedule.post_schedule import PostSchedulePhase
-from source.flow.schedule.pre_schedule import PreSchedulePhase
-from source.flow.schedule.main_schedule_algorithm import MainScheduleAlgorithm
 # Add the project root to sys.path if not already there
 sys.path.append('./')
-from collections import defaultdict
-from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
-from source.algorithm.heuristic.FFD import FFD
-from source.component.dataclass.job_info import SchedulerJobInfo, TranspiledJob
 
+from typing import Any, Dict
+import time
+
+from source.flow.schedule.pre_schedule import PreSchedulePhase
+from source.flow.schedule.main_schedule_algorithm import MainScheduleAlgorithm
+
+from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
+from source.component.dataclass.job_info import SchedulerJobInfo
     
 class ConcreteSchedulePhase():
-    def __init__(self):
+    """Schedule quantum circuits on available machines."""
+    def __init__(self, algorithm: Any = None):
+        self.algorithm = algorithm
+        
         self.pre_phase = PreSchedulePhase()
         self.main_schedule_algorithm = MainScheduleAlgorithm()
-        self.post_phase = PostSchedulePhase()
 
-    def capture(self, capture_result_schedule: Any, scheduler_job: Dict[str, SchedulerJobInfo], start_time: float, end_time: float):
-        capture_result_schedule.nameSchedule = "FFD"
-        capture_result_schedule.ScheduleLatency = end_time - start_time
-        capture_result_schedule.calculate_metrics(scheduler_job)
-        
-    
-    def execute(self, origin_job_info: Dict[str, JobInfo], machines: Dict[str, Any], capture_result_schedule: Any) -> Dict[str, JobInfo]:
+    def execute(self, origin_job_info: Dict[str, JobInfo], machines: Dict[str, Any], capture_result_schedule: Any) -> Dict[str, SchedulerJobInfo]:
         # Process job info and cut the circuits if needed
+        # pre_phase: TODO implement circuit cutting if nessessary
         scheduler_job = self.pre_phase.execute(origin_job_info)
         
+        # main_schedule_algorithm: Schedule the jobs on the machines using the specified algorithm
         start_time = time.time() 
-        scheduler_job = self.main_schedule_algorithm.base_schedule_algorithm(scheduler_job, machines)
+        scheduler_job = self.main_schedule_algorithm.execute(self.algorithm, scheduler_job, machines)
         end_time = time.time()
-        self.capture(capture_result_schedule, scheduler_job, start_time, end_time)
-        execution_job_relations = self.post_phase.execute(scheduler_job, machines)
-        return execution_job_relations
+        
+        # Capture the scheduling results
+        self._capture(capture_result_schedule, scheduler_job, start_time, end_time)
+        return scheduler_job
+
+    def _capture(self, capture_result_schedule: Any, scheduler_job: Dict[str, SchedulerJobInfo], start_time: float, end_time: float):
+        capture_result_schedule.nameSchedule = self.algorithm.__class__.__name__ if self.algorithm is not None else "DefaultAlgorithm"
+        capture_result_schedule.ScheduleLatency = end_time - start_time
+        capture_result_schedule.calculate_metrics(scheduler_job)

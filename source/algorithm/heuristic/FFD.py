@@ -1,187 +1,143 @@
-from typing import Any, Dict
-import sys
+from dataclasses import dataclass
+from typing import Dict
 
-# Add the project root to sys.path if not already there
-sys.path.append('./')
+from source.algorithm.heuristic.ffd_qpu import Job, QPU, ffd_pack
+from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
+from source.component.dataclass.machine_characteristic import MachineCharacteristic
 
-from source.component.dataclass.job_info import SchedulerJobInfo
-from source.flow.schedule.estimated import estimated_schedule
+
+@dataclass
+class FFDBin:
+    """One machine's capacity in a packing round, retaining the original jobs."""
+
+    machine_name: str
+    num_qubits: int
+    round_index: int
+    jobs: Dict[str, SchedulerJobInfo]
+    used_qubits: int
+
+    @property
+    def remaining_qubits(self) -> int:
+        return self.num_qubits - self.used_qubits
+
 
 class FFD:
-    """
-    First-Fit Decreasing scheduler for quantum jobs.
+    """Pack independent jobs and express their schedule as dispatch dependencies.
 
-    Jobs are processed in descending order of circuit width. For each job,
-    the scheduler scans machines in the provided order and picks the first
-    machine that can host the circuit and is available at the job's arrival
-    time. If no machine is available immediately, the first machine with
-    enough qubits is selected and the job waits until that machine becomes
-    free.
+    Dictionary keys identify jobs and machines. Machine insertion order is the
+    first-fit preference; equally wide jobs retain their insertion order.
+    Arrival times and priorities do not affect this batch schedule.
     """
 
     @staticmethod
-    def _job_qubits(job_info: SchedulerJobInfo) -> int:
-        circuit = job_info.job_information.circuit if job_info.job_information else None
-        return int(getattr(circuit, 'num_qubits', 0) or 0)
+    def _job_qubits(job_name: str, job: SchedulerJobInfo) -> int:
+        information = job.job_information
+        if information is None:
+            raise ValueError(f"Job {job_name!r} has no job information")
+        width = information.num_qubits
+        if width is None and information.circuit is not None:
+            width = information.circuit.num_qubits
+        if type(width) is not int or width <= 0:
+            raise ValueError(f"Job {job_name!r} must have a positive integer qubit count")
+        return width
 
-    @staticmethod
-    def _machine_qubits(machine: Any) -> int:
-        return int(getattr(machine, 'num_qubits', 0) or 0)
+    def pack(
+        self,
+        scheduler_job: Dict[str, SchedulerJobInfo],
+        machines: Dict[str, MachineCharacteristic],
+    ) -> list[FFDBin]:
+        """Return full bins followed by open bins without modifying either input.
 
-    @staticmethod
-    def _job_arrival_time(job_info: SchedulerJobInfo) -> float:
-        if job_info.job_information is None:
-            return 0.0
-        arrival_time = job_info.job_information.arrival_time
-        return float(arrival_time if arrival_time is not None else 0.0)
-
-    @staticmethod
-    def _machine_available_time(machine_state: Dict[str, Any]) -> float:
-        return float(machine_state['available_time'])
-
-    @staticmethod
-    def _find_first_fitting_machine(
-        job_info: SchedulerJobInfo,
-        machine_states: list[Dict[str, Any]],
-    ) -> Dict[str, Any] | None:
-        """Find the machine that can host the job soonest.
-
-        Scans every machine with enough qubits, computes its earliest
-        feasible start time via `_earliest_start_for_machine`, and picks the
-        machine with the smallest one. Ties (e.g. multiple idle machines)
-        are broken by machine order, preserving first-fit semantics. This
-        avoids sticking a job on the first machine in order just because it
-        *eventually* has room, while another machine could start it sooner.
+        Reuse the simulation's packing algorithm, including empty machine copies
+        and backfilling earlier rounds. Reject jobs that cannot fit any machine.
         """
-        required_qubits = FFD._job_qubits(job_info)
-        arrival_time = FFD._job_arrival_time(job_info)
+        if not machines:
+            if scheduler_job:
+                raise ValueError("At least one machine is required to schedule jobs")
+            return []
 
-        best_machine_state = None
-        best_start = None
-
-        for machine_state in machine_states:
-            if FFD._machine_qubits(machine_state['machine']) < required_qubits:
-                continue
-            earliest = FFD._earliest_start_for_machine(machine_state, arrival_time, job_info, required_qubits)
-            if earliest is None:
-                continue
-            if best_start is None or earliest < best_start:
-                best_start = earliest
-                best_machine_state = machine_state
-
-        if best_machine_state is not None:
-            best_machine_state['_candidate_start'] = best_start
-
-        return best_machine_state
-
-    @staticmethod
-    def _capacity_available(machine_state: Dict[str, Any], start: float, end: float, required_qubits: int) -> bool:
-        """Return True if the machine has enough free qubits for [start, end)."""
-        capacity = FFD._machine_qubits(machine_state['machine'])
-        allocations = machine_state.get('allocations', [])
-        # Sum overlapping allocations
-        used = 0
-        for alloc in allocations:
-            if alloc['start'] < end and alloc['end'] > start:
-                used += alloc['qubits']
-                if used + required_qubits > capacity:
-                    return False
-        return used + required_qubits <= capacity
+        jobs = [
+            Job(name, self._job_qubits(name, job))
+            for name, job in scheduler_job.items()
+        ]
+        qpus = [QPU(name, machine.capacity) for name, machine in machines.items()]
+        return [
+            FFDBin(
+                machine_name=packed.qpu.name,
+                num_qubits=packed.qpu.num_qubits,
+                round_index=packed.copy_index,
+                jobs={job.name: scheduler_job[job.name] for job in packed.jobs},
+                used_qubits=packed.used_qubits,
+            )
+            for packed in ffd_pack(jobs, qpus)
+        ]
 
     @staticmethod
-    def _earliest_start_for_machine(machine_state: Dict[str, Any], arrival: float, job_info: SchedulerJobInfo, required_qubits: int) -> float | None:
-        """Find earliest start >= arrival where capacity is available for job duration.
+    def _estimated_duration(job_name: str, job: SchedulerJobInfo) -> float:
+        information = job.job_information
+        if information is None:
+            raise ValueError(f"Job {job_name!r} has no job information")
+        shots = 1024 if information.shots is None else information.shots
+        if type(shots) is not int or shots <= 0:
+            raise ValueError(f"Job {job_name!r} must have a positive integer shot count")
+        depth = information.circuit.depth() if information.circuit is not None else 1
+        return float(max(1, depth) * shots)
 
-        Returns start time or None if not found (practically never None if machine has enough qubits).
-        """
-        allocations = machine_state.get('allocations', [])
-        duration = float(max(1.0, float(estimated_schedule(job_info.job_information.circuit, shots=(job_info.job_information.shots if job_info.job_information and job_info.job_information.shots is not None else 1024)))))
+    def execute(
+        self,
+        scheduler_job: Dict[str, SchedulerJobInfo],
+        machines: Dict[str, MachineCharacteristic],
+    ) -> Dict[str, SchedulerJobInfo]:
+        """Update and return the original jobs using the existing dataclass fields.
 
-        # Candidate times: arrival and all allocation end times >= arrival
-        candidates = {arrival}
-        for alloc in allocations:
-            if alloc['end'] >= arrival:
-                candidates.add(alloc['end'])
+        Each bin runs for its longest estimated job duration, with independent
+        machine clocks starting at zero. Convert these internal intervals into a
+        zero-based dispatch order per machine and dependencies on every job in
+        the preceding occupied bin on that machine. Jobs sharing an interval can
+        run concurrently. No start/end attributes are added to the input objects.
 
-        for t in sorted(candidates):
-            if FFD._capacity_available(machine_state, t, t + duration, required_qubits):
-                return t
-
-        # If no gap found, try after the latest end
-        latest_end = max([alloc['end'] for alloc in allocations], default=arrival)
-        if FFD._capacity_available(machine_state, latest_end, latest_end + duration, required_qubits):
-            return latest_end
-
-        return None
-    
-    @staticmethod
-    def execute(scheduler_job: Dict[str, SchedulerJobInfo], machines: Dict[str, Any]) -> Dict[str, SchedulerJobInfo]:
-        """
-        Execute the FFD scheduling algorithm.
-        
-        Args:
-            scheduler_job: Dictionary of SchedulerJobInfo objects with job name as key
-            machines: Dictionary of quantum machine backends with machine name as key
-            
-        Returns:
-            Updated scheduler_job dictionary with assigned machines and scheduled times
+        Dependencies contain the original JobInfo objects. Existing dependencies
+        are retained; they do not influence packing of this independent batch.
         """
         if not scheduler_job:
             return scheduler_job
 
-        machine_states = [
-            {
-                'name': machine_name,
-                'machine': machine_backend,
-                'available_time': 0.0,
-            }
-            for machine_name, machine_backend in machines.items()
-        ]
+        bins = self.pack(scheduler_job, machines)
+        # Validate all durations before changing any scheduling information.
+        durations = {
+            name: self._estimated_duration(name, job)
+            for name, job in scheduler_job.items()
+        }
+        available_time = {name: 0.0 for name in machines}
+        intervals: list[tuple[float, float, FFDBin]] = []
+        # Full bins can close before an earlier round's partially occupied bin.
+        for packed in sorted(bins, key=lambda item: item.round_index):
+            if not packed.jobs:
+                continue
+            start_time = available_time[packed.machine_name]
+            end_time = start_time + max(durations[name] for name in packed.jobs)
+            intervals.append((start_time, end_time, packed))
+            available_time[packed.machine_name] = end_time
 
-        sorted_jobs = sorted(
-            scheduler_job.items(),
-            key=lambda item: FFD._job_qubits(item[1]),
-            reverse=True,
-        )
-
-        for job_name, job_info in sorted_jobs:
-            required_qubits = FFD._job_qubits(job_info)
-            machine_state = FFD._find_first_fitting_machine(job_info, machine_states)
-            if machine_state is None:
-                raise ValueError(
-                    f"No available machine can host job '{job_name}' with {required_qubits} qubits"
-                )
-
-            circuit = job_info.job_information.circuit
-            shots = (
-                job_info.job_information.shots
-                if job_info.job_information and job_info.job_information.shots is not None
-                else 1024
-            )
-            arrival_time = FFD._job_arrival_time(job_info)
-
-            # If a candidate start was computed in _find_first_fitting_machine, prefer it
-            candidate_start = machine_state.pop('_candidate_start', None)
-            if candidate_start is not None:
-                start_time = float(candidate_start)
-            else:
-                # otherwise, try at arrival or the machine's latest end
-                start_time = arrival_time
-
-            execution_time = shots * float(max(1.0, float(estimated_schedule(circuit, shots=shots))))
-            end_time = start_time + execution_time
-
-            # Record allocation on machine
-            alloc = {
-                'job': job_name,
-                'start': start_time,
-                'end': end_time,
-                'qubits': required_qubits,
-            }
-            machine_state.setdefault('allocations', []).append(alloc)
-
-            job_info.assigned_machine = machine_state['name']
-            job_info.scheduled_start_time = start_time
-            job_info.scheduled_end_time = end_time
-        
+        dispatch_order = {name: 0 for name in machines}
+        previous_jobs: Dict[str, list[JobInfo]] = {name: [] for name in machines}
+        for _, _, packed in sorted(intervals, key=lambda item: item[0]):
+            machine_name = packed.machine_name
+            for job in packed.jobs.values():
+                dependencies: list[JobInfo | None] = []
+                seen: set[int] = set()
+                for predecessor in (job.depends_on or []) + previous_jobs[machine_name]:
+                    if id(predecessor) not in seen:
+                        dependencies.append(predecessor)
+                        seen.add(id(predecessor))
+                job.assigned_machine = machine_name
+                job.dispatch_order = dispatch_order[machine_name]
+                job.depends_on = dependencies
+                dispatch_order[machine_name] += 1
+            previous_jobs[machine_name] = [
+                job.job_information
+                for job in packed.jobs.values()
+                if job.job_information is not None
+            ]
+        print(scheduler_job)
         return scheduler_job

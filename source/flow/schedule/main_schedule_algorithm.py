@@ -1,16 +1,12 @@
-from abc import ABC, abstractmethod
-import sched
-from typing import Any, Dict, Tuple
-import time
 import sys
-from copy import deepcopy
+sys.path.append('./')
 
-from source.algorithm.heuristic.FFD import FFD
+from typing import Any, Dict
 from source.component.dataclass.job_info import SchedulerJobInfo
 
 
 class MainScheduleAlgorithm():
-    def base_schedule_algorithm(self, scheduler_job: Dict[str, SchedulerJobInfo], machines: Dict[str, Any]) -> Dict[str, SchedulerJobInfo]:
+    def execute(self, algorithm: Any, scheduler_job: Dict[str, SchedulerJobInfo], machines: Dict[str, Any]) -> Dict[str, SchedulerJobInfo]:
         """
         Base scheduling algorithm using FFD.
 
@@ -22,4 +18,4 @@ class MainScheduleAlgorithm():
             Updated scheduler_job with scheduling information.
         """
         print("Main Schedule Algorithm: FFD")
-        return FFD.execute(scheduler_job, machines)
+        return algorithm.execute(scheduler_job, machines)

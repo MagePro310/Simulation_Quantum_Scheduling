@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Any, Dict, List
 
 from source.component.dataclass.job_info import ExecutionResult, MachineExecutionResult
-from source.component.visualize.gantt_chart import GanttChart
+from source.component.help_function.gantt_chart import GanttChart
 from qiskit.quantum_info.analysis import hellinger_fidelity
 from qiskit.result import marginal_counts
 

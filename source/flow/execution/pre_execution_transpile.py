@@ -9,6 +9,8 @@ from qiskit.circuit import ClassicalRegister, QuantumCircuit, QuantumRegister
 from qiskit.compiler import transpile
 
 class PreExecution:
+    #dispach the job to the machine
+    
     def compose(self, circuits: List[Any]) -> Any:
         if not circuits:
             raise ValueError("At least one circuit is required.")
