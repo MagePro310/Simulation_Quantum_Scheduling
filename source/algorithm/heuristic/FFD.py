@@ -1,19 +1,29 @@
-from dataclasses import dataclass
-from typing import Dict
+from dataclasses import dataclass, replace
 
-from source.algorithm.heuristic.ffd_qpu import Job, QPU, ffd_pack
 from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
 from source.component.dataclass.machine_characteristic import MachineCharacteristic
+from source.component.help_function.estimated_time import EstimatedTime
 
 
 @dataclass
 class FFDBin:
-    """One machine's capacity in a packing round, retaining the original jobs."""
+    """A group of jobs that share one machine's qubit capacity.
+
+    Each packing round adds one empty bin for every machine. The round index
+    identifies a copy of that machine's capacity, not a start time.
+
+    Args:
+        machine_name: Name of the machine.
+        num_qubits: Total qubit capacity of the machine.
+        round_index: The packing round index.
+        jobs: Dictionary of SchedulerJobInfo objects assigned to this bin.
+        used_qubits: Total qubits used by the jobs in this bin.
+    """
 
     machine_name: str
     num_qubits: int
     round_index: int
-    jobs: Dict[str, SchedulerJobInfo]
+    jobs: dict[str, SchedulerJobInfo]
     used_qubits: int
 
     @property
@@ -22,121 +32,211 @@ class FFDBin:
 
 
 class FFD:
-    """Pack independent jobs and express their schedule as dispatch dependencies.
+    """First Fit Decreasing: place the largest jobs first.
+
+    Start reading at execute() for the overall scheduling flow.
+    Read pack() for the FFD algorithm itself.
 
     Dictionary keys identify jobs and machines. Machine insertion order is the
     first-fit preference; equally wide jobs retain their insertion order.
     Arrival times and priorities do not affect this batch schedule.
+    Inputs are assumed to be valid, with every job fitting at least one machine.
     """
-
-    @staticmethod
-    def _job_qubits(job_name: str, job: SchedulerJobInfo) -> int:
-        information = job.job_information
-        if information is None:
-            raise ValueError(f"Job {job_name!r} has no job information")
-        width = information.num_qubits
-        if width is None and information.circuit is not None:
-            width = information.circuit.num_qubits
-        if type(width) is not int or width <= 0:
-            raise ValueError(f"Job {job_name!r} must have a positive integer qubit count")
-        return width
-
-    def pack(
-        self,
-        scheduler_job: Dict[str, SchedulerJobInfo],
-        machines: Dict[str, MachineCharacteristic],
-    ) -> list[FFDBin]:
-        """Return full bins followed by open bins without modifying either input.
-
-        Reuse the simulation's packing algorithm, including empty machine copies
-        and backfilling earlier rounds. Reject jobs that cannot fit any machine.
-        """
-        if not machines:
-            if scheduler_job:
-                raise ValueError("At least one machine is required to schedule jobs")
-            return []
-
-        jobs = [
-            Job(name, self._job_qubits(name, job))
-            for name, job in scheduler_job.items()
-        ]
-        qpus = [QPU(name, machine.capacity) for name, machine in machines.items()]
-        return [
-            FFDBin(
-                machine_name=packed.qpu.name,
-                num_qubits=packed.qpu.num_qubits,
-                round_index=packed.copy_index,
-                jobs={job.name: scheduler_job[job.name] for job in packed.jobs},
-                used_qubits=packed.used_qubits,
-            )
-            for packed in ffd_pack(jobs, qpus)
-        ]
-
-    @staticmethod
-    def _estimated_duration(job_name: str, job: SchedulerJobInfo) -> float:
-        information = job.job_information
-        if information is None:
-            raise ValueError(f"Job {job_name!r} has no job information")
-        shots = 1024 if information.shots is None else information.shots
-        if type(shots) is not int or shots <= 0:
-            raise ValueError(f"Job {job_name!r} must have a positive integer shot count")
-        depth = information.circuit.depth() if information.circuit is not None else 1
-        return float(max(1, depth) * shots)
 
     def execute(
         self,
-        scheduler_job: Dict[str, SchedulerJobInfo],
-        machines: Dict[str, MachineCharacteristic],
-    ) -> Dict[str, SchedulerJobInfo]:
-        """Update and return the original jobs using the existing dataclass fields.
-
-        Each bin runs for its longest estimated job duration, with independent
-        machine clocks starting at zero. Convert these internal intervals into a
-        zero-based dispatch order per machine and dependencies on every job in
-        the preceding occupied bin on that machine. Jobs sharing an interval can
-        run concurrently. No start/end attributes are added to the input objects.
-
-        Dependencies contain the original JobInfo objects. Existing dependencies
-        are retained; they do not influence packing of this independent batch.
-        """
+        scheduler_job: dict[str, SchedulerJobInfo],
+        machines: dict[str, MachineCharacteristic],
+    ) -> dict[str, SchedulerJobInfo]:
+        """Build a schedule and update the original jobs; no circuits run here."""
         if not scheduler_job:
             return scheduler_job
 
-        bins = self.pack(scheduler_job, machines)
-        # Validate all durations before changing any scheduling information.
-        durations = {
-            name: self._estimated_duration(name, job)
-            for name, job in scheduler_job.items()
-        }
-        available_time = {name: 0.0 for name in machines}
-        intervals: list[tuple[float, float, FFDBin]] = []
-        # Full bins can close before an earlier round's partially occupied bin.
-        for packed in sorted(bins, key=lambda item: item.round_index):
-            if not packed.jobs:
-                continue
-            start_time = available_time[packed.machine_name]
-            end_time = start_time + max(durations[name] for name in packed.jobs)
-            intervals.append((start_time, end_time, packed))
-            available_time[packed.machine_name] = end_time
+        # 1. Group jobs into machine bins using First Fit Decreasing.
+        packed_bins = self.pack(scheduler_job, machines)
 
-        dispatch_order = {name: 0 for name in machines}
-        previous_jobs: Dict[str, list[JobInfo]] = {name: [] for name in machines}
-        for _, _, packed in sorted(intervals, key=lambda item: item[0]):
-            machine_name = packed.machine_name
-            for job in packed.jobs.values():
-                dependencies: list[JobInfo | None] = []
-                seen: set[int] = set()
-                for predecessor in (job.depends_on or []) + previous_jobs[machine_name]:
-                    if id(predecessor) not in seen:
-                        dependencies.append(predecessor)
-                        seen.add(id(predecessor))
+        # 2. Use estimated durations to order the occupied bins by start time.
+        bins_in_execution_order = self._order_bins_by_start_time(
+            packed_bins, scheduler_job, machines
+        )
+
+        # 3. Write each job's machine, dispatch order, and dependencies.
+        self._assign_jobs(bins_in_execution_order, machines)
+        return scheduler_job
+
+    def pack(
+        self,
+        scheduler_job: dict[str, SchedulerJobInfo],
+        machines: dict[str, MachineCharacteristic],
+    ) -> list[FFDBin]:
+        """Group jobs into bins without changing the jobs or machines.
+
+        Example: one 6-qubit machine, jobs A=4, B=3, C=2 qubits.
+            A goes into round 0: [A], with 2 qubits left.
+            B cannot fit there, so open round 1: [B].
+            C fits back into round 0: [A, C].
+
+        Earlier bins stay available until full. Return full bins first, followed
+        by bins with free capacity, including empty bins.
+        """
+        # 1. Read how many qubits each job needs.
+        job_qubits: dict[str, int] = {}
+        for job_name, job in scheduler_job.items():
+            job_info = job.job_information
+            if job_info.num_qubits is not None:
+                job_qubits[job_name] = job_info.num_qubits
+            else:
+                job_qubits[job_name] = job_info.circuit.num_qubits
+
+        # 2. Decreasing: largest jobs first; equal sizes keep their input order.
+        jobs_largest_first = sorted(
+            scheduler_job,
+            key=lambda job_name: job_qubits[job_name],
+            reverse=True,
+        )
+
+        # 3. Start round 0 with one empty bin per machine.
+        round_index = 0
+        open_bins = self._create_round_bins(machines, round_index)
+        full_bins: list[FFDBin] = []
+
+        # 4. First fit: place each job in the first bin with enough free qubits.
+        for job_name in jobs_largest_first:
+            required_qubits = job_qubits[job_name]
+            selected_bin = None
+
+            # Search ALL open bins, including those from earlier rounds.
+            for candidate_bin in open_bins:
+                if required_qubits <= candidate_bin.remaining_qubits:
+                    selected_bin = candidate_bin
+                    break
+
+            # No existing bin fits: add one fresh bin for every machine.
+            if selected_bin is None:
+                round_index += 1
+                new_bins = self._create_round_bins(machines, round_index)
+                open_bins.extend(new_bins)
+
+                for candidate_bin in new_bins:
+                    if required_qubits <= candidate_bin.remaining_qubits:
+                        selected_bin = candidate_bin
+                        break
+
+            # Add the original job object and consume its qubit capacity.
+            selected_bin.jobs[job_name] = scheduler_job[job_name]
+            selected_bin.used_qubits += required_qubits
+
+            # Full bins cannot accept another job; partially filled bins stay open.
+            if selected_bin.remaining_qubits == 0:
+                open_bins.remove(selected_bin)
+                full_bins.append(selected_bin)
+
+        # 5. Keep the packing result order: full bins, then remaining open bins.
+        return full_bins + open_bins
+
+    @staticmethod
+    def _create_round_bins(
+        machines: dict[str, MachineCharacteristic], round_index: int
+    ) -> list[FFDBin]:
+        """Create one empty bin per machine, preserving machine order."""
+        return [
+            FFDBin(
+                machine_name=machine_name,
+                num_qubits=machine.capacity,
+                round_index=round_index,
+                jobs={},
+                used_qubits=0,
+            )
+            for machine_name, machine in machines.items()
+        ]
+
+    def _order_bins_by_start_time(
+        self,
+        packed_bins: list[FFDBin],
+        scheduler_job: dict[str, SchedulerJobInfo],
+        machines: dict[str, MachineCharacteristic],
+    ) -> list[FFDBin]:
+        """Each machine runs its bins sequentially; different machines may overlap.
+
+        Jobs in a bin share a start time, so the bin lasts as long as its longest
+        job. These times only order bins; they are not stored on the jobs.
+        """
+        job_durations = {
+            job_name: self._estimated_duration(job)
+            for job_name, job in scheduler_job.items()
+        }
+        machine_available_at = {machine_name: 0.0 for machine_name in machines}
+        bins_by_start_time: list[tuple[float, FFDBin]] = []
+
+        # pack() returns full bins first. Restore round order before timing them.
+        bins_by_round = sorted(packed_bins, key=lambda packed_bin: packed_bin.round_index)
+        for packed_bin in bins_by_round:
+            if not packed_bin.jobs:
+                continue
+            machine_name = packed_bin.machine_name
+            start_time = machine_available_at[machine_name]
+            bin_duration = max(job_durations[job_name] for job_name in packed_bin.jobs)
+            machine_available_at[machine_name] = start_time + bin_duration
+            bins_by_start_time.append((start_time, packed_bin))
+        bins_by_start_time.sort(key=lambda item: item[0])
+        return [packed_bin for _, packed_bin in bins_by_start_time]
+
+    def _assign_jobs(
+        self,
+        bins_in_execution_order: list[FFDBin],
+        machines: dict[str, MachineCharacteristic],
+    ) -> None:
+        """Update jobs with the dispatch sequence and barriers between bins."""
+        next_dispatch_order = {machine_name: 0 for machine_name in machines}
+        previous_bin_jobs: dict[str, list[JobInfo]] = {
+            machine_name: [] for machine_name in machines
+        }
+        for packed_bin in bins_in_execution_order:
+            machine_name = packed_bin.machine_name
+
+            # All jobs here wait for the preceding bin on this same machine.
+            # Existing dependencies are also retained.
+            for job in packed_bin.jobs.values():
+                dependencies = self._merge_dependencies(
+                    job.depends_on or [], previous_bin_jobs[machine_name]
+                )
                 job.assigned_machine = machine_name
-                job.dispatch_order = dispatch_order[machine_name]
+                job.dispatch_order = next_dispatch_order[machine_name]
                 job.depends_on = dependencies
-                dispatch_order[machine_name] += 1
-            previous_jobs[machine_name] = [
+                next_dispatch_order[machine_name] += 1
+
+            # Update only after the whole bin, so its jobs can run together.
+            previous_bin_jobs[machine_name] = [
                 job.job_information
-                for job in packed.jobs.values()
+                for job in packed_bin.jobs.values()
                 if job.job_information is not None
             ]
-        return scheduler_job
+
+    @staticmethod
+    def _estimated_duration(job: SchedulerJobInfo) -> float:
+        """Estimate duration using default shots and a minimum depth of one."""
+        job_info = job.job_information
+        shots = 1024 if job_info.shots is None else job_info.shots
+        if job_info.circuit is None:
+            return float(shots)
+
+        # Supply default shots without changing the original job information.
+        estimation_info = replace(job_info, shots=shots)
+        estimator = EstimatedTime()
+        duration = estimator.estimate_execution_time_without_machine(estimation_info)
+        return float(max(shots, duration))
+
+    @staticmethod
+    def _merge_dependencies(
+        existing_dependencies: list[JobInfo | None],
+        previous_bin_jobs: list[JobInfo],
+    ) -> list[JobInfo | None]:
+        """Keep dependency order and deduplicate by identity, not dataclass values."""
+        dependencies: list[JobInfo | None] = []
+        seen_ids: set[int] = set()
+        for dependency in existing_dependencies + previous_bin_jobs:
+            dependency_id = id(dependency)
+            if dependency_id not in seen_ids:
+                dependencies.append(dependency)
+                seen_ids.add(dependency_id)
+        return dependencies
