@@ -1,10 +1,13 @@
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List
 import math
 import matplotlib as mpl
 
 mpl.use("Agg")
 import matplotlib.pyplot as plt
+
+DEFAULT_OUTPUT_PATH = Path(__file__).resolve().parents[3] / "results" / "charts" / "gantt_chart.png"
 
 @dataclass
 class GanttChart:
@@ -25,7 +28,7 @@ class GanttChart:
         '/', '\\', '|', '-', '+', 'x', 'o', 'O', '.', '*'
     ])
 
-    def display(self, schedule_job: Dict[str, Any], machines: Dict[str, Any], output_path: str = "gantt_chart.png") -> None:
+    def display(self, schedule_job: Dict[str, Any], machines: Dict[str, Any], output_path: str | Path = DEFAULT_OUTPUT_PATH) -> None:
         if not schedule_job or not machines:
             return
 
@@ -183,6 +186,8 @@ class GanttChart:
         ax.set_xlim(overall_start - margin, overall_end + margin)
 
         plt.tight_layout()
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
         plt.close('all')
         print(f"Gantt chart saved to: {output_path}")
