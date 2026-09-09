@@ -215,16 +215,7 @@ class FFD:
     @staticmethod
     def _estimated_duration(job: SchedulerJobInfo) -> float:
         """Estimate duration using default shots and a minimum depth of one."""
-        job_info = job.job_information
-        shots = 1024 if job_info.shots is None else job_info.shots
-        if job_info.circuit is None:
-            return float(shots)
-
-        # Supply default shots without changing the original job information.
-        estimation_info = replace(job_info, shots=shots)
-        estimator = EstimatedTime()
-        duration = estimator.estimate_execution_time_without_machine(estimation_info)
-        return float(max(shots, duration))
+        return EstimatedTime().estimate_execution_time_without_machine(job.job_information)
 
     @staticmethod
     def _merge_dependencies(

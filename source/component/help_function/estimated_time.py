@@ -20,5 +20,5 @@ class EstimatedTime:
         """
         # Placeholder logic for estimating execution time without machine characteristics
         # This should be replaced with actual logic based on the circuit's properties
-        value : int = job_info.circuit.depth() * job_info.shots
+        value : float = job_info.circuit.depth() * job_info.shots
         return value

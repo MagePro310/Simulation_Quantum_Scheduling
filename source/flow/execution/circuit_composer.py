@@ -25,15 +25,14 @@ class CircuitPreparation:
         merged_circuit, classical_bits = self._compose_circuits(jobs, total_qubits, total_clbits)
 
         # Transpile for backend
-        backend = machine.quantum_machine
         transpiled_circuit = transpile(
             merged_circuit,
-            backend=backend,
+            backend=machine.quantum_machine,
             scheduling_method="alap",
             optimization_level=1,
             seed_transpiler=seed,
         )
-        duration_per_shot = float(transpiled_circuit.estimate_duration(backend.target, unit="s"))
+        duration_per_shot = float(transpiled_circuit.estimate_duration(machine.quantum_machine.target, unit="s"))
 
         return PreparedBatch(
             job_ids=tuple(jobs),
@@ -57,16 +56,15 @@ class CircuitPreparation:
         qubit_offset = clbit_offset = 0
 
         for job_id, job in jobs.items():
-            circuit = job.circuit
-            bit_indices = tuple(range(clbit_offset, clbit_offset + circuit.num_clbits))
+            bit_indices = tuple(range(clbit_offset, clbit_offset + job.circuit.num_clbits))
             merged_circuit.compose(
-                circuit,
-                qubits=range(qubit_offset, qubit_offset + circuit.num_qubits),
+                job.circuit,
+                qubits=range(qubit_offset, qubit_offset + job.circuit.num_qubits),
                 clbits=bit_indices,
                 inplace=True,
             )
             classical_bits[job_id] = bit_indices
-            qubit_offset += circuit.num_qubits
-            clbit_offset += circuit.num_clbits
+            qubit_offset += job.circuit.num_qubits
+            clbit_offset += job.circuit.num_clbits
 
         return merged_circuit, classical_bits

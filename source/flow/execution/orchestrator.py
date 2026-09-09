@@ -121,16 +121,13 @@ class ConcreteExecutionPhase:
         """Create initial execution results."""
         results = {}
         for name, job in scheduler_job.items():
-            job_info = job.job_information
-            shots = job_info.shots if job_info.shots else 1024
-
             results[name] = ExecutionResult(
-                job_info=job_info,
+                job_info=job.job_information,
                 assigned_machine=job.assigned_machine,
                 distribution_no_noise={},
                 distribution_with_noise={},
                 execution_time=0.0,
-                requested_shots=shots,
+                requested_shots=job.job_information.shots or 1024,
             )
         return results
 
@@ -138,39 +135,33 @@ class ConcreteExecutionPhase:
 
     def _complete_finished_batches(self, now, events, machine_states, results):
         """Process all batches that completed by current time."""
-        completions = []
-
         while events and events[0][0] <= now:
             _, _, completion = heapq.heappop(events)
-            machine = completion.batch_record.machine_name
-            state = machine_states[machine]
+            state = machine_states[completion.batch_record.machine_name]
 
             # Update batch status
             completion.batch_record.status = "FAILED" if completion.error else "SUCCEEDED"
             completion.batch_record.error_reason = completion.error
 
-            # Update job results
-            remaining = self._update_job_results(completion, results)
-            state.active = remaining
+            # Update job results and print completions
+            state.active = self._update_job_results(completion, results)
             state.busy = False
-            completions.append(completion)
 
-        # Print completions
-        for completion in completions:
+            # Print completions
             for job_name in completion.batch_record.job_ids:
-                result = results[job_name]
-                if result.status == "SUCCEEDED":
+                if results[job_name].status == "SUCCEEDED":
+                    result = results[job_name]
                     print(f"│ Complete : {job_name:<15} (duration: {result.execution_time:.3f}s, fidelity: {result.fidelity:.4f})")
 
     def _update_job_results(self, completion, results):
         """Update results for completed batch, return remaining active jobs."""
         remaining = []
+        record = completion.batch_record
 
-        for job_name in completion.batch_record.job_ids:
+        for job_name in record.job_ids:
             result = results[job_name]
-            result.end_time = completion.batch_record.end_time
-            result.execution_time += (completion.batch_record.end_time -
-                                     completion.batch_record.start_time)
+            result.end_time = record.end_time
+            result.execution_time += record.end_time - record.start_time
 
             if completion.error:
                 result.status = "FAILED"
@@ -185,7 +176,7 @@ class ConcreteExecutionPhase:
             result.distribution_with_noise = dict(
                 Counter(result.distribution_with_noise) + Counter(counts.distribution_with_noise)
             )
-            result.completed_shots += completion.batch_record.shots
+            result.completed_shots += record.shots
 
             # Check if job is done
             if result.completed_shots >= result.requested_shots:
@@ -205,42 +196,38 @@ class ConcreteExecutionPhase:
 
     def _block_failed_dependents(self, scheduler_job, results):
         """Mark jobs as BLOCKED if their dependencies failed."""
-        changed = True
-        while changed:
+        while True:
             changed = False
             for job_name, job in scheduler_job.items():
                 if results[job_name].status != "PENDING":
                     continue
 
-                # Find failed dependencies
-                failed_deps = []
-                for dep_info in job.depends_on:
-                    for dep_name, dep_job in scheduler_job.items():
-                        if dep_job.job_information is dep_info:
-                            if results[dep_name].status in {"FAILED", "BLOCKED"}:
-                                failed_deps.append(dep_name)
-                            break
+                failed_deps = [
+                    dep_name
+                    for dep_info in job.depends_on
+                    for dep_name, dep_job in scheduler_job.items()
+                    if dep_job.job_information is dep_info and results[dep_name].status in {"FAILED", "BLOCKED"}
+                ]
 
                 if failed_deps:
                     results[job_name].status = "BLOCKED"
                     results[job_name].error_reason = f"Dependencies failed: {failed_deps}"
                     changed = True
 
+            if not changed:
+                break
+
     def _dispatch_and_execute(self, now, machines, scheduler_job, results,
                              machine_states, events, queue_policy, seed):
         """Dispatch ready jobs and execute batches on available machines."""
-        preparation_failed = False
-
         for machine_name, state in machine_states.items():
             if state.busy:
                 continue
 
-            machine = machines[machine_name]
-
             # Select jobs to run
             state.active = self._select_jobs(
                 now, scheduler_job, results, state.queue, state.active,
-                machine.capacity, queue_policy
+                machines[machine_name].capacity, queue_policy
             )
 
             if not state.active:
@@ -250,14 +237,13 @@ class ConcreteExecutionPhase:
             try:
                 state.busy = True
                 state.prepared = self._execute_batch(
-                    now, machine, state.active, scheduler_job, results,
+                    now, machines[machine_name], state.active, scheduler_job, results,
                     state.prepared, events, seed
                 )
             except Exception as error:
                 # Handle failure
-                batch_record = self.execution_summary.batches[-1]
-                batch_record.status = "FAILED"
-                batch_record.error_reason = str(error)
+                self.execution_summary.batches[-1].status = "FAILED"
+                self.execution_summary.batches[-1].error_reason = str(error)
 
                 for job_name in state.active:
                     results[job_name].status = "FAILED"
@@ -266,46 +252,36 @@ class ConcreteExecutionPhase:
                 state.active = []
                 state.prepared = None
                 state.busy = False
-                preparation_failed = True
+                return True
 
-        return preparation_failed
+        return False
 
     def _select_jobs(self, now, scheduler_job, results, queue, active, capacity, policy):
         """Select jobs from queue that can run now."""
-        # Keep running jobs
         active_jobs = [name for name in active if results[name].status == "RUNNING"]
-        used_qubits = sum(
-            scheduler_job[name].job_information.circuit.num_qubits
-            for name in active_jobs
-        )
+        used_qubits = sum(scheduler_job[name].job_information.circuit.num_qubits for name in active_jobs)
 
-        # Try adding jobs from queue
         to_remove = []
         for job_name in queue:
-            result = results[job_name]
-
-            if result.status != "PENDING":
+            if results[job_name].status != "PENDING":
                 to_remove.append(job_name)
                 continue
 
-            job = scheduler_job[job_name]
-            info = job.job_information
+            info = scheduler_job[job_name].job_information
 
             # Check arrival time
-            arrival = info.arrival_time if info.arrival_time else 0
-            if now < arrival:
+            if now < (info.arrival_time or 0):
                 if policy == "strict":
                     break
                 continue
 
             # Check dependencies
-            deps_ready = all(
+            if not all(
                 results[dep_name].status == "SUCCEEDED"
-                for dep_info in job.depends_on
+                for dep_info in scheduler_job[job_name].depends_on
                 for dep_name, dep_job in scheduler_job.items()
                 if dep_job.job_information is dep_info
-            )
-            if not deps_ready:
+            ):
                 if policy == "strict":
                     break
                 continue
@@ -321,7 +297,6 @@ class ConcreteExecutionPhase:
             used_qubits += info.circuit.num_qubits
             to_remove.append(job_name)
 
-        # Remove from queue
         for name in to_remove:
             queue.remove(name)
 
@@ -330,31 +305,20 @@ class ConcreteExecutionPhase:
     def _execute_batch(self, now, machine, active_jobs, scheduler_job,
                       results, prepared_batch, events, seed):
         """Prepare and execute a batch on the machine."""
-        # Calculate shots (minimum across all jobs)
-        shots = min(
-            results[name].requested_shots - results[name].completed_shots
-            for name in active_jobs
-        )
-
-        # Create batch record
         batch_id = len(self.execution_summary.batches) + 1
         batch_record = BatchExecutionRecord(
             batch_id=batch_id,
             machine_name=machine.name,
             job_ids=tuple(active_jobs),
-            shots=shots,
+            shots=min(results[name].requested_shots - results[name].completed_shots for name in active_jobs),
             start_time=now,
             end_time=now,
-            logical_qubits=sum(
-                scheduler_job[name].job_information.circuit.num_qubits
-                for name in active_jobs
-            ),
+            logical_qubits=sum(scheduler_job[name].job_information.circuit.num_qubits for name in active_jobs),
         )
         self.execution_summary.batches.append(batch_record)
 
         # Apply shot limit
-        max_shots = self.quantum_runner.max_shots(machine)
-        if max_shots:
+        if max_shots := self.quantum_runner.max_shots(machine):
             batch_record.shots = min(batch_record.shots, max_shots)
 
         # Prepare circuits (reuse if same jobs)
@@ -365,35 +329,28 @@ class ConcreteExecutionPhase:
                 seed=seed,
             )
 
-        # Calculate duration
-        duration = float(prepared_batch.duration_per_shot) * batch_record.shots
-        batch_record.end_time = now + duration
+        # Calculate duration and mark jobs as running
+        batch_record.end_time = now + float(prepared_batch.duration_per_shot) * batch_record.shots
 
-        # Mark jobs as running
         for name in active_jobs:
             if results[name].start_time is None:
                 results[name].start_time = now
             results[name].status = "RUNNING"
 
-        # Print dispatch
-        jobs_str = ', '.join(active_jobs)
-        print(f"│ Dispatch : {machine.name:<15} → {jobs_str} ({batch_record.shots} shots)")
+        print(f"│ Dispatch : {machine.name:<15} → {', '.join(active_jobs)} ({batch_record.shots} shots)")
 
         # Execute quantum simulation
         try:
-            merged_counts = self.quantum_runner.execute_batch(
-                machine, prepared_batch, batch_record.shots,
-                seed=(seed + batch_id - 1) % 2**32,
+            job_counts = self._split_counts(
+                prepared_batch,
+                self.quantum_runner.execute_batch(machine, prepared_batch, batch_record.shots, seed=(seed + batch_id - 1) % 2**32)
             )
-            job_counts = self._split_counts(prepared_batch, merged_counts)
             error = None
         except Exception as e:
             job_counts = None
             error = f"Batch {batch_id} execution failed: {e}"
 
-        # Schedule completion event
-        completion = BatchCompletion(batch_record, job_counts, error)
-        heapq.heappush(events, (batch_record.end_time, batch_id, completion))
+        heapq.heappush(events, (batch_record.end_time, batch_id, BatchCompletion(batch_record, job_counts, error)))
 
         return prepared_batch
 
@@ -425,15 +382,12 @@ class ConcreteExecutionPhase:
 
     def _print_status(self, now, results, machine_states):
         """Print current execution status."""
-        pending = [name for name, r in results.items() if r.status == "PENDING"]
-        running = [name for name, r in results.items() if r.status == "RUNNING"]
-
-        if not pending and not running:
+        if not any(r.status in {"PENDING", "RUNNING"} for r in results.values()):
             return
 
         print(f"\n┌─ Time: {now:.3f}s ─────────────────────────────────────")
 
-        if pending:
+        if pending := [name for name, r in results.items() if r.status == "PENDING"]:
             print(f"│ Queue    : {', '.join(pending)}")
 
         for machine_name, state in machine_states.items():
@@ -445,8 +399,6 @@ class ConcreteExecutionPhase:
     def _next_event_time(self, now, events, scheduler_job, results, queue_policy):
         """Calculate next event time."""
         next_times = [timestamp for timestamp, _, _ in events]
-
-        # Add future arrival times
         next_times.extend(
             job.job_information.arrival_time
             for name, job in scheduler_job.items()
@@ -456,18 +408,13 @@ class ConcreteExecutionPhase:
         )
 
         if not next_times:
-            waiting = [name for name, r in results.items()
-                      if r.status in {"PENDING", "RUNNING"}]
             raise RuntimeError(
-                f"Cannot make progress with queue_policy={queue_policy!r}: {waiting}"
+                f"Cannot make progress with queue_policy={queue_policy!r}: "
+                f"{[name for name, r in results.items() if r.status in {'PENDING', 'RUNNING'}]}"
             )
 
-        # Group floating-point equivalent times
         earliest = min(next_times)
-        return max(
-            t for t in next_times
-            if t - earliest <= 4 * max(math.ulp(earliest), math.ulp(t))
-        )
+        return max(t for t in next_times if t - earliest <= 4 * max(math.ulp(earliest), math.ulp(t)))
 
     # ========== Helper Checks ==========
 

@@ -40,8 +40,7 @@ class JobDispatcher:
                 continue
 
             # Check arrival time
-            arrival = info.arrival_time if info.arrival_time is not None else 0
-            if now < arrival:
+            if now < (info.arrival_time or 0):
                 if queue_policy == "strict":
                     break
                 continue

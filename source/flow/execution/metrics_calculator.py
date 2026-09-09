@@ -40,17 +40,16 @@ class MetricsCalculator:
             summary.average_fidelity = sum(fidelities) / len(fidelities) if fidelities else 0
 
         # Machine utilization
-        for machine_name, machine in machines.items():
+        for machine_name in machines:
             batches = [b for b in summary.batches if b.machine_name == machine_name and b.status == "SUCCEEDED"]
             busy_time = sum(b.end_time - b.start_time for b in batches)
             qubit_time = sum(b.logical_qubits * (b.end_time - b.start_time) for b in batches)
-            utilization = busy_time / summary.makespan if summary.makespan > 0 else 0
 
             summary.machines[machine_name] = MachineExecutionResult(
                 machine_name=machine_name,
                 busy_time=busy_time,
                 qubit_time=qubit_time,
-                utilization=utilization,
+                utilization=busy_time / summary.makespan if summary.makespan else 0,
             )
 
     @staticmethod

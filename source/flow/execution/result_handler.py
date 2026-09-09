@@ -45,11 +45,12 @@ class ResultHandler:
             if ResultHandler._is_job_complete(result):
                 result.status = "SUCCEEDED"
                 # Calculate fidelity
+                all_keys = set(result.distribution_no_noise) | set(result.distribution_with_noise)
                 overlap = sum(
                     min(result.distribution_no_noise.get(k, 0), result.distribution_with_noise.get(k, 0))
-                    for k in set(result.distribution_no_noise) | set(result.distribution_with_noise)
+                    for k in all_keys
                 )
-                result.fidelity = overlap / result.completed_shots if result.completed_shots > 0 else 1.0
+                result.fidelity = overlap / result.completed_shots if result.completed_shots else 1.0
                 if print_completion:
                     print(f"│ Complete : {name:<15} (duration: {result.execution_time:.3f}s, fidelity: {result.fidelity:.4f})")
             else:

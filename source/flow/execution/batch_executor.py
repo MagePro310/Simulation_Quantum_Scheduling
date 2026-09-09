@@ -56,8 +56,7 @@ class BatchExecutor:
         summary.batches.append(batch_record)
 
         # Apply shot limits
-        limit = self.quantum_runner.max_shots(machine)
-        if limit is not None:
+        if limit := self.quantum_runner.max_shots(machine):
             batch_record.shots = min(batch_record.shots, limit)
 
         # Prepare circuits (reuse if possible)
@@ -83,16 +82,15 @@ class BatchExecutor:
         print(f"│ Dispatch : {batch_record.machine_name:<15} → {job_list} ({batch_record.shots} shots)")
 
         # Execute simulation
-        counts = None
-        error_reason = None
-
         try:
             merged_counts = self.quantum_runner.execute_batch(
                 machine, prepared_batch, batch_record.shots,
                 seed=(seed + batch_record.batch_id - 1) % 2**32,
             )
             counts = self._split_counts(prepared_batch, merged_counts)
+            error_reason = None
         except Exception as error:
+            counts = None
             error_reason = f"Batch {batch_record.batch_id} on {batch_record.machine_name!r} execution failed: {error}"
 
         # Schedule completion
