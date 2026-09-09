@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
 from source.component.dataclass.machine_characteristic import MachineCharacteristic

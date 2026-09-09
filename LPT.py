@@ -17,7 +17,7 @@ def test_concrete_flow():
     
     # Schedule Phase (change algorithm here)
     from source.algorithm.heuristic.LPT import LPT
-    schedule_result = ConcreteSchedulePhase(algorithm=FFD()).execute(input_job, machines_set, capture_result_schedule)
+    schedule_result = ConcreteSchedulePhase(algorithm=LPT()).execute(input_job, machines_set, capture_result_schedule)
     results = ConcreteExecutionPhase().execute(machines_set, schedule_result, capture_result_schedule=capture_result_schedule)
 
     # Debug: Print results

@@ -25,6 +25,7 @@ class ConcreteSchedulePhase():
         scheduler_job = self.pre_phase.execute(origin_job_info)
         
         # main_schedule_algorithm: Schedule the jobs on the machines using the specified algorithm
+        print(f"Executing scheduling algorithm: {self.algorithm.__class__.__name__ if self.algorithm is not None else 'DefaultAlgorithm'}")
         start_time = time.time() 
         scheduler_job = self.main_schedule_algorithm.execute(self.algorithm, scheduler_job, machines)
         end_time = time.time()
