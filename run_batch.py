@@ -7,6 +7,7 @@ RESULTS_DIR = PROJECT_ROOT / "results"
 ALGORITHMS = [
     {"name": "FFD", "script": "implement/FFD.py"},
     {"name": "LPT", "script": "implement/LPT.py"},
+    {"name": "QGroup", "script": "implement/QGroup.py"},
 ]
 
 # Batch settings

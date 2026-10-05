@@ -99,6 +99,20 @@ class ConcreteExecutionPhase:
             capture_result_schedule.execution_summary = self.execution_summary
         MetricsCalculator.print_summary(self.execution_summary)
 
+        # Generate Gantt Chart visualization
+        algo_name = getattr(capture_result_schedule, "nameSchedule", "Schedule") if capture_result_schedule else "Schedule"
+        if not gantt_output_path:
+            from pathlib import Path
+            project_root = Path(__file__).resolve().parents[3]
+            gantt_output_path = project_root / "results" / "charts" / f"{algo_name}_gantt.png"
+
+        try:
+            from source.component.help_function.gantt_chart import GanttChart
+            gantt = GanttChart(title=f"{algo_name} Schedule Gantt Chart")
+            gantt.display(results, machines, output_path=gantt_output_path, execution_summary=self.execution_summary)
+        except Exception as err:
+            print(f"Failed to generate Gantt chart: {err}")
+
         return results
 
     # ========== Initialization ==========
