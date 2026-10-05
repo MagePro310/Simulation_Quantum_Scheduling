@@ -59,6 +59,75 @@ class BatchExecutor:
         if limit := self.quantum_runner.max_shots(machine):
             batch_record.shots = min(batch_record.shots, limit)
 
+        # Check if batch contains cut subcircuits
+        has_subexperiments = any(
+            getattr(scheduler_job[name].job_information, "subexperiments", None) is not None
+            for name in active_jobs
+        )
+
+        if has_subexperiments:
+            from qiskit.transpiler import generate_preset_pass_manager
+            from qiskit_ibm_runtime import SamplerV2
+
+            for name in batch_record.job_ids:
+                if results[name].start_time is None:
+                    results[name].start_time = now
+                results[name].status = "RUNNING"
+
+            job_list = ', '.join(batch_record.job_ids)
+            print(f"│ Dispatch : {batch_record.machine_name:<15} → {job_list} ({batch_record.shots} shots, cut subcircuits)")
+
+            try:
+                counts = {}
+                total_duration = 0.0
+                pass_manager = generate_preset_pass_manager(
+                    optimization_level=1, backend=machine.quantum_machine, seed_transpiler=seed
+                )
+                sampler = SamplerV2(mode=machine.quantum_machine)
+
+                for name in batch_record.job_ids:
+                    info = scheduler_job[name].job_information
+                    if info.subexperiments is not None:
+                        isa_subexpts = pass_manager.run(info.subexperiments)
+                        duration_per_shot = sum(
+                            float(c.estimate_duration(machine.quantum_machine.target, unit="s"))
+                            for c in isa_subexpts
+                        )
+                        total_duration += duration_per_shot * batch_record.shots
+
+                        sub_res = sampler.run(isa_subexpts, shots=batch_record.shots).result()
+
+                        if info.parentJob and getattr(info.parentJob, "cutting_context", None):
+                            info.parentJob.cutting_context.sub_results[info.partition_label] = sub_res
+
+                        try:
+                            first_counts = dict(sub_res[0].data.observable_measurements.get_counts())
+                        except Exception:
+                            first_counts = {}
+
+                        counts[name] = BatchCounts(
+                            distribution_no_noise=first_counts,
+                            distribution_with_noise=first_counts,
+                        )
+
+                batch_record.end_time = now + max(total_duration, 0.0001)
+                error_reason = None
+            except Exception as error:
+                counts = None
+                error_reason = f"Batch {batch_record.batch_id} subexperiment execution failed: {error}"
+
+            from dataclasses import dataclass
+
+            @dataclass
+            class Completion:
+                record: BatchExecutionRecord
+                counts: dict[str, BatchCounts] | None
+                error: str | None
+
+            completion = Completion(batch_record, counts, error_reason)
+            heapq.heappush(events, (batch_record.end_time, batch_record.batch_id, completion))
+            return None
+
         # Prepare circuits (reuse if possible)
         if prepared_batch is None or prepared_batch.job_ids != batch_record.job_ids:
             prepared_batch = self.circuit_composer.prepare_batch(

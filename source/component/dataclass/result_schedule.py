@@ -34,6 +34,7 @@ class ExecutionSummary:
     succeeded_jobs: int = 0
     failed_jobs: int = 0
     blocked_jobs: int = 0
+    total_cutting_overhead: float = 0.0
     machines: dict[str, MachineExecutionResult] = field(default_factory=dict)
     batches: list = field(default_factory=list)
 
@@ -48,6 +49,7 @@ class ResultOfSchedule:
     nameMachines: str | list[str] = ""
     nameSchedule: str = ""
     ScheduleLatency: float = 0.0
+    cutting_policy: str = "greedy"
     execution_summary: ExecutionSummary | None = None
 
     def capture_execution(self, summary: ExecutionSummary) -> None:

@@ -13,16 +13,17 @@ from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
     
 class ConcreteSchedulePhase():
     """Schedule quantum circuits on available machines."""
-    def __init__(self, algorithm: Any = None):
+    def __init__(self, algorithm: Any = None, cutting_policy: str = "greedy"):
         self.algorithm = algorithm
+        self.cutting_policy = cutting_policy.lower()
         
-        self.pre_phase = PreSchedulePhase()
+        self.pre_phase = PreSchedulePhase(cutting_policy=self.cutting_policy)
         self.main_schedule_algorithm = MainScheduleAlgorithm()
 
     def execute(self, origin_job_info: Dict[str, JobInfo], machines: Dict[str, Any], capture_result_schedule: Any) -> Dict[str, SchedulerJobInfo]:
         # Process job info and cut the circuits if needed
-        # pre_phase: TODO implement circuit cutting if nessessary
-        scheduler_job = self.pre_phase.execute(origin_job_info)
+        # pre_phase: implement circuit cutting if necessary
+        scheduler_job = self.pre_phase.execute(origin_job_info, machines)
         
         # main_schedule_algorithm: Schedule the jobs on the machines using the specified algorithm
         print(f"Executing scheduling algorithm: {self.algorithm.__class__.__name__ if self.algorithm is not None else 'DefaultAlgorithm'}")
@@ -37,3 +38,5 @@ class ConcreteSchedulePhase():
     def _capture(self, capture_result_schedule: Any, scheduler_job: Dict[str, SchedulerJobInfo], start_time: float, end_time: float):
         capture_result_schedule.nameSchedule = self.algorithm.__class__.__name__ if self.algorithm is not None else "DefaultAlgorithm"
         capture_result_schedule.ScheduleLatency = end_time - start_time
+        capture_result_schedule.cutting_policy = self.cutting_policy
+

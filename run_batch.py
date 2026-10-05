@@ -23,6 +23,7 @@ in a separate process, collecting results into a single timestamped CSV file.
 To add a new algorithm: edit batch_config.py and add it to the ALGORITHMS list.
 """
 
+import argparse
 import csv
 import json
 import subprocess
@@ -70,6 +71,8 @@ def create_csv_with_header(csv_path: Path) -> None:
         "succeeded_jobs",
         "failed_jobs",
         "blocked_jobs",
+        "total_cutting_overhead",
+        "cutting_policy",
         # Nested/list fields as JSON
         "machines_json",
         "batches_json",
@@ -86,7 +89,7 @@ def create_csv_with_header(csv_path: Path) -> None:
         writer.writeheader()
 
 
-def run_algorithm(algorithm_name: str, script_path: Path, output_json: Path) -> tuple[str, str | None]:
+def run_algorithm(algorithm_name: str, script_path: Path, output_json: Path, cutting_policy: str = "greedy") -> tuple[str, str | None]:
     """Run algorithm script in a separate process.
 
     Returns:
@@ -95,7 +98,14 @@ def run_algorithm(algorithm_name: str, script_path: Path, output_json: Path) -> 
 
     try:
         result = subprocess.run(
-            [sys.executable, str(script_path), "--json-output", str(output_json)],
+            [
+                sys.executable,
+                str(script_path),
+                "--cutting-policy",
+                cutting_policy,
+                "--json-output",
+                str(output_json),
+            ],
             capture_output=True,
             text=True,
             timeout=TIMEOUT,
@@ -169,6 +179,8 @@ def append_result_row(
         row["succeeded_jobs"] = exec_summary.get("succeeded_jobs", "")
         row["failed_jobs"] = exec_summary.get("failed_jobs", "")
         row["blocked_jobs"] = exec_summary.get("blocked_jobs", "")
+        row["total_cutting_overhead"] = exec_summary.get("total_cutting_overhead", "")
+        row["cutting_policy"] = result_data.get("cutting_policy", "")
 
         # Nested fields as JSON strings
         machines = exec_summary.get("machines", {})
@@ -191,6 +203,7 @@ def append_result_row(
             "total_waiting_time", "total_response_time", "average_turnaround_time",
             "average_waiting_time", "average_response_time", "job_completion_rate",
             "average_fidelity", "succeeded_jobs", "failed_jobs", "blocked_jobs",
+            "total_cutting_overhead", "cutting_policy",
             "machines_json", "batches_json", "workload_fingerprint", "machine_config",
             "seed", "queue_policy", "dependency_versions",
         ]:
@@ -205,6 +218,14 @@ def append_result_row(
 
 def main() -> int:
     """Run batch simulation and collect results."""
+    parser = argparse.ArgumentParser(description="Sequential batch runner for quantum scheduling algorithms")
+    parser.add_argument(
+        "--cutting-policy",
+        choices=["greedy", "half"],
+        default="greedy",
+        help="Circuit cutting policy to apply: 'greedy' or 'half' (default: 'greedy')",
+    )
+    args = parser.parse_args()
 
     # Load algorithms from configuration
     if not ALGORITHMS:
@@ -212,6 +233,7 @@ def main() -> int:
         return 1
 
     print(f"Configured algorithms: {', '.join(a['name'] for a in ALGORITHMS)}")
+    print(f"Circuit cutting policy: {args.cutting_policy}")
 
     # Create timestamped CSV
     timestamp = get_batch_timestamp()
@@ -244,7 +266,7 @@ def main() -> int:
                 append_result_row(csv_path, run_index, algo_name, start_time, end_time, "FAILED", error, None)
                 continue
 
-            print(f"\n[{run_index}/{len(ALGORITHMS)}] Running {algo_name}...")
+            print(f"\n[{run_index}/{len(ALGORITHMS)}] Running {algo_name} (policy={args.cutting_policy})...")
 
             # Create temporary file for JSON output
             with tempfile.NamedTemporaryFile(
@@ -257,7 +279,7 @@ def main() -> int:
 
             try:
                 start_time = datetime.utcnow().isoformat()
-                status, error = run_algorithm(algo_name, script_path, tmp_path)
+                status, error = run_algorithm(algo_name, script_path, tmp_path, cutting_policy=args.cutting_policy)
                 end_time = datetime.utcnow().isoformat()
 
                 print(f"  Status: {status}")

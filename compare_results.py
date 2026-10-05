@@ -19,6 +19,86 @@ import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
+COMPARISON_METRICS: list[dict[str, Any]] = [
+    {
+        "field": "schedule_latency",
+        "label": "Schedule Latency",
+        "description": "Wall-clock scheduling decision time (s)",
+        "unit": "Seconds (s)",
+        "lower_is_better": True,
+    },
+    {
+        "field": "makespan",
+        "label": "Makespan",
+        "description": "Total virtual execution time (s)",
+        "unit": "Seconds (s)",
+        "lower_is_better": True,
+    },
+    {
+        "field": "total_turnaround_time",
+        "label": "Total Turnaround Time",
+        "description": "Sum of all job turnaround times (s)",
+        "unit": "Seconds (s)",
+        "lower_is_better": True,
+    },
+    {
+        "field": "total_waiting_time",
+        "label": "Total Waiting Time",
+        "description": "Sum of all job waiting times (s)",
+        "unit": "Seconds (s)",
+        "lower_is_better": True,
+    },
+    {
+        "field": "total_response_time",
+        "label": "Total Response Time",
+        "description": "Sum of all job response times (s)",
+        "unit": "Seconds (s)",
+        "lower_is_better": True,
+    },
+    {
+        "field": "average_turnaround_time",
+        "label": "Avg Turnaround Time",
+        "description": "Mean turnaround time across jobs (s)",
+        "unit": "Seconds (s)",
+        "lower_is_better": True,
+    },
+    {
+        "field": "average_waiting_time",
+        "label": "Avg Waiting Time",
+        "description": "Mean waiting time across jobs (s)",
+        "unit": "Seconds (s)",
+        "lower_is_better": True,
+    },
+    {
+        "field": "average_response_time",
+        "label": "Avg Response Time",
+        "description": "Mean response time across jobs (s)",
+        "unit": "Seconds (s)",
+        "lower_is_better": True,
+    },
+    {
+        "field": "job_completion_rate",
+        "label": "Job Completion Rate",
+        "description": "Throughput: completed jobs / makespan",
+        "unit": "Jobs / second",
+        "lower_is_better": False,
+    },
+    {
+        "field": "average_fidelity",
+        "label": "Avg Fidelity",
+        "description": "Mean quantum circuit execution fidelity",
+        "unit": "Score (0-1)",
+        "lower_is_better": False,
+    },
+    {
+        "field": "total_cutting_overhead",
+        "label": "Cutting Overhead",
+        "description": "Total sampling overhead incurred from circuit cutting",
+        "unit": "Sampling factor",
+        "lower_is_better": True,
+    },
+]
+
 
 def load_batch_results(csv_path: Path) -> list[dict[str, Any]]:
     """Load all result rows from the batch CSV file."""
@@ -89,42 +169,61 @@ def safe_int(value: str | int) -> int | None:
         return None
 
 
-def calculate_difference(lpt_val: float | None, ffd_val: float | None) -> tuple[float | None, str]:
-    """Calculate LPT - FFD difference.
+def format_value_for_display(val: float | None) -> str:
+    """Format floating point numbers cleanly for chart labels and report tables."""
+    if val is None:
+        return "N/A"
+    if val == 0:
+        return "0.0"
+    abs_val = abs(val)
+    if abs_val >= 100:
+        return f"{val:.2f}"
+    if abs_val >= 1:
+        return f"{val:.4f}"
+    if abs_val >= 0.001:
+        return f"{val:.4f}"
+    return f"{val:.4g}"
+
+
+def calculate_difference(algo_val: float | None, baseline_val: float | None) -> tuple[float | None, str]:
+    """Calculate algorithm - baseline difference.
 
     Returns (difference, formatted_string) tuple.
     """
-    if lpt_val is None or ffd_val is None:
+    if algo_val is None or baseline_val is None:
         return (None, "N/A")
 
-    diff = lpt_val - ffd_val
+    diff = algo_val - baseline_val
+    sign = "+" if diff > 0 else ""
 
-    # Format with sign
-    if diff > 0:
-        return (diff, f"+{diff:.4f}")
-    else:
-        return (diff, f"{diff:.4f}")
+    abs_d = abs(diff)
+    if abs_d == 0:
+        return (diff, "0.0")
+    if abs_d < 0.0001:
+        return (diff, f"{sign}{diff:.4g}")
+    return (diff, f"{sign}{diff:.4f}")
 
 
-def calculate_percentage_difference(lpt_val: float | None, ffd_val: float | None) -> str:
+def calculate_percentage_difference(algo_val: float | None, baseline_val: float | None) -> str:
     """Calculate percentage difference, handle zero baseline.
 
     Returns formatted string with explanation if baseline is zero.
     """
-    if lpt_val is None or ffd_val is None:
+    if algo_val is None or baseline_val is None:
         return "N/A"
 
-    if ffd_val == 0:
-        if lpt_val == 0:
+    if baseline_val == 0:
+        if algo_val == 0:
             return "0% (both zero)"
         else:
-            return f"N/A (FFD baseline is zero)"
+            return "N/A (baseline is zero)"
 
-    pct_diff = ((lpt_val - ffd_val) / ffd_val) * 100
+    pct_diff = ((algo_val - baseline_val) / baseline_val) * 100
     if pct_diff > 0:
         return f"+{pct_diff:.2f}%"
     else:
         return f"{pct_diff:.2f}%"
+
 
 
 def generate_markdown_report(
@@ -202,24 +301,15 @@ def generate_markdown_report(
 
             latency = safe_float(result.get("schedule_latency"))
             if algo == baseline_algo:
-                f.write(f"| {algo} | {latency if latency is not None else 'N/A'} | baseline |\n")
+                f.write(f"| {algo} | {format_value_for_display(latency)} | baseline |\n")
             else:
                 diff, diff_str = calculate_difference(latency, baseline_latency)
-                f.write(f"| {algo} | {latency if latency is not None else 'N/A'} | {diff_str} |\n")
+                f.write(f"| {algo} | {format_value_for_display(latency)} | {diff_str} |\n")
         f.write("\n")
 
         # Execution Summary Metrics
         f.write("## Execution Summary Metrics\n\n")
-        f.write("All times in seconds (virtual execution time).\n\n")
-
-        metrics = [
-            ("makespan", "Makespan", "Total virtual execution time"),
-            ("average_turnaround_time", "Avg Turnaround Time", "Job submission to completion (successful jobs only)"),
-            ("average_waiting_time", "Avg Waiting Time", "Time between job batches (successful jobs only)"),
-            ("average_response_time", "Avg Response Time", "Initial waiting time (successful jobs only)"),
-            ("job_completion_rate", "Job Completion Rate", "Throughput: successes / makespan"),
-            ("average_fidelity", "Avg Fidelity", "Mean fidelity (successful jobs only)"),
-        ]
+        f.write("All times in seconds (virtual execution time) unless specified otherwise.\n\n")
 
         # Build table header dynamically
         header = "| Metric | " + " | ".join(algorithm_names) + " |"
@@ -227,7 +317,9 @@ def generate_markdown_report(
         f.write(header + "\n")
         f.write(separator + "\n")
 
-        for field, label, description in metrics:
+        for metric_info in COMPARISON_METRICS:
+            field = metric_info["field"]
+            label = metric_info["label"]
             row_values = [label]
             for algo in algorithm_names:
                 result = results_by_algo[algo]
@@ -242,17 +334,17 @@ def generate_markdown_report(
                         baseline_val = safe_float(baseline_result.get(field))
                         diff, diff_str = calculate_difference(val, baseline_val)
                         pct_str = calculate_percentage_difference(val, baseline_val)
-                        row_values.append(f"{val:.4f} ({diff_str}, {pct_str})")
+                        row_values.append(f"{format_value_for_display(val)} ({diff_str}, {pct_str})")
                     else:
-                        row_values.append(f"{val:.4f}")
+                        row_values.append(f"{format_value_for_display(val)}")
                 else:
                     row_values.append("N/A")
 
             f.write("| " + " | ".join(row_values) + " |\n")
 
         f.write("\n**Metric Definitions:**\n\n")
-        for _, label, description in metrics:
-            f.write(f"- **{label}**: {description}\n")
+        for metric_info in COMPARISON_METRICS:
+            f.write(f"- **{metric_info['label']}**: {metric_info['description']}\n")
         f.write("\n**Note**: Values in parentheses show (difference from baseline, % change)\n\n")
 
         # Job Outcomes
@@ -356,6 +448,101 @@ def generate_markdown_report(
             else:
                 f.write("No batch data available.\n\n")
 
+        # Visualizations
+        f.write("## Visualizations\n\n")
+        f.write("### Overview Metrics Comparison\n\n")
+        f.write("![Metrics Overview](metrics_comparison.png)\n\n")
+        f.write("### Individual Metric Comparisons\n\n")
+        for metric_info in COMPARISON_METRICS:
+            f.write(f"#### {metric_info['label']}\n\n")
+            f.write(f"![{metric_info['label']}]({metric_info['field']}.png)\n\n")
+        f.write("### Job Outcomes\n\n")
+        f.write("![Job Outcomes](job_outcomes.png)\n\n")
+        f.write("### Machine Utilization\n\n")
+        f.write("![Machine Utilization](machine_utilization.png)\n\n")
+
+
+def generate_individual_metric_chart(
+    metric_info: dict[str, Any],
+    results_by_algo: dict[str, dict[str, Any]],
+    algorithm_names: list[str],
+    colors: list[Any],
+    output_dir: Path,
+) -> Path:
+    """Generate an individual comparison bar chart PNG for a specific metric."""
+    field = metric_info["field"]
+    label = metric_info["label"]
+    unit = metric_info.get("unit", "")
+    lower_is_better = metric_info.get("lower_is_better")
+
+    fig, ax = plt.subplots(figsize=(max(6, len(algorithm_names) * 1.5), 5))
+
+    values = []
+    labels = []
+    bar_colors = []
+
+    for idx, algo in enumerate(algorithm_names):
+        result = results_by_algo[algo]
+        val = safe_float(result.get(field))
+        if val is not None:
+            values.append(val)
+            labels.append(algo)
+            bar_colors.append(colors[idx])
+
+    if values:
+        bars = ax.bar(
+            labels,
+            values,
+            color=bar_colors,
+            width=min(0.55, 0.2 + 0.1 * len(labels)),
+            edgecolor="black",
+            linewidth=0.8,
+            alpha=0.85,
+            zorder=3,
+        )
+        ax.set_axisbelow(True)
+        ax.grid(axis="y", linestyle="--", alpha=0.5, zorder=0)
+
+        # Value labels above bars
+        for bar, val in zip(bars, values):
+            height = bar.get_height()
+            formatted = format_value_for_display(val)
+            ax.annotate(
+                formatted,
+                xy=(bar.get_x() + bar.get_width() / 2, height),
+                xytext=(0, 4),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+                fontweight="bold",
+            )
+
+        pref_text = ""
+        if lower_is_better is True:
+            pref_text = " (lower is better)"
+        elif lower_is_better is False:
+            pref_text = " (higher is better)"
+
+        ax.set_title(f"{label} Comparison{pref_text}", fontsize=13, fontweight="bold", pad=12)
+        ax.set_xlabel("Algorithm", fontsize=11, fontweight="medium")
+        ax.set_ylabel(unit, fontsize=11, fontweight="medium")
+        ax.tick_params(axis="x", labelsize=10)
+        ax.tick_params(axis="y", labelsize=10)
+
+        if min(values) >= 0:
+            ax.set_ylim(bottom=0)
+        ax.margins(y=0.18)
+    else:
+        ax.text(0.5, 0.5, "Data N/A", ha="center", va="center", transform=ax.transAxes, fontsize=12)
+        ax.set_title(f"{label} Comparison", fontsize=13, fontweight="bold")
+
+    plt.tight_layout()
+    chart_path = output_dir / f"{field}.png"
+    plt.savefig(chart_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return chart_path
+
 
 def generate_charts(results: list[dict[str, Any]], output_dir: Path) -> list[Path]:
     """Generate comparison charts as PNG files.
@@ -377,23 +564,33 @@ def generate_charts(results: list[dict[str, Any]], output_dir: Path) -> list[Pat
     algorithm_names = list(results_by_algo.keys())
     num_algos = len(algorithm_names)
 
-    # Define color palette for algorithms
-    colors = plt.cm.tab10(np.linspace(0, 1, max(num_algos, 3)))
+    # Define color palette for algorithms (distinct categorical colors)
+    colors = [plt.cm.tab10(i % 10) for i in range(num_algos)]
 
-    # Chart 1: Key Metrics Comparison
-    metrics = [
-        ("makespan", "Makespan"),
-        ("average_turnaround_time", "Avg Turnaround"),
-        ("average_waiting_time", "Avg Waiting"),
-        ("job_completion_rate", "Completion Rate"),
-        ("average_fidelity", "Avg Fidelity"),
-    ]
+    # 1. Individual Metric Charts (each metric saved to its own PNG)
+    for metric_info in COMPARISON_METRICS:
+        single_chart_path = generate_individual_metric_chart(
+            metric_info=metric_info,
+            results_by_algo=results_by_algo,
+            algorithm_names=algorithm_names,
+            colors=colors,
+            output_dir=output_dir,
+        )
+        chart_paths.append(single_chart_path)
 
-    fig, axes = plt.subplots(1, len(metrics), figsize=(16, 4))
-    fig.suptitle("Algorithm Comparison: Key Metrics", fontsize=14, fontweight="bold")
+    # 2. All Metrics Comparison Grid (dynamically sized based on number of metrics)
+    num_metrics = len(COMPARISON_METRICS)
+    cols = 4
+    rows = (num_metrics + cols - 1) // cols
+    fig, axes = plt.subplots(rows, cols, figsize=(5.5 * cols, 4.5 * rows))
+    fig.suptitle("Algorithm Comparison: All Metrics", fontsize=16, fontweight="bold", y=0.98)
+    axes_flat = axes.flatten()
 
-    for idx, (field, label) in enumerate(metrics):
-        ax = axes[idx]
+    for idx, metric_info in enumerate(COMPARISON_METRICS):
+        ax = axes_flat[idx]
+        field = metric_info["field"]
+        label = metric_info["label"]
+        lower_is_better = metric_info.get("lower_is_better")
 
         values = []
         labels = []
@@ -408,26 +605,55 @@ def generate_charts(results: list[dict[str, Any]], output_dir: Path) -> list[Pat
                 colors_used.append(colors[algo_idx])
 
         if values:
-            bars = ax.bar(labels, values, color=colors_used)
-            ax.set_title(label)
-            ax.set_ylabel("Value")
-            ax.tick_params(axis='x', rotation=45)
+            bars = ax.bar(
+                labels,
+                values,
+                color=colors_used,
+                width=min(0.55, 0.2 + 0.1 * len(labels)),
+                edgecolor="black",
+                linewidth=0.6,
+                alpha=0.85,
+                zorder=3,
+            )
+            ax.set_axisbelow(True)
+            ax.grid(axis="y", linestyle="--", alpha=0.5, zorder=0)
 
-            # Add value labels on bars
-            for bar in bars:
+            pref_str = " (↓)" if lower_is_better is True else (" (↑)" if lower_is_better is False else "")
+            ax.set_title(f"{label}{pref_str}", fontsize=11, fontweight="bold")
+            ax.set_ylabel(metric_info.get("unit", "Value"), fontsize=9)
+            ax.tick_params(axis="x", rotation=30, labelsize=9)
+            ax.tick_params(axis="y", labelsize=8)
+
+            for bar, val in zip(bars, values):
                 height = bar.get_height()
-                ax.text(bar.get_x() + bar.get_width()/2., height,
-                       f'{height:.3f}',
-                       ha='center', va='bottom', fontsize=8)
+                formatted = format_value_for_display(val)
+                ax.annotate(
+                    formatted,
+                    xy=(bar.get_x() + bar.get_width() / 2, height),
+                    xytext=(0, 2),
+                    textcoords="offset points",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                    fontweight="bold",
+                )
+            if min(values) >= 0:
+                ax.set_ylim(bottom=0)
+            ax.margins(y=0.18)
         else:
             ax.text(0.5, 0.5, "Data\nN/A", ha="center", va="center", transform=ax.transAxes)
-            ax.set_title(label)
+            ax.set_title(label, fontsize=11, fontweight="bold")
+
+    # Hide any unused subplot axes in the grid
+    for j in range(num_metrics, len(axes_flat)):
+        fig.delaxes(axes_flat[j])
 
     plt.tight_layout()
     chart_path = output_dir / "metrics_comparison.png"
     plt.savefig(chart_path, dpi=150, bbox_inches="tight")
-    plt.close()
+    plt.close(fig)
     chart_paths.append(chart_path)
+
 
     # Chart 2: Job Outcomes (multiple pie charts or stacked bar)
     if num_algos <= 4:

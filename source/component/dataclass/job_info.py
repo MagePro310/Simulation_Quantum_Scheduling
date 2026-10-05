@@ -20,6 +20,10 @@ class JobInfo:
     # Help for cut
     parentJob: 'JobInfo | None' = None
     childrenJobs: dict[str, 'JobInfo'] | None = None
+    partition_label: str | None = None
+    subexperiments: list[QuantumCircuit] | None = None
+    cutting_context: object | None = None
+    cutting_overhead: float = 0.0
         
 @dataclass
 class SchedulerJobInfo:
@@ -42,6 +46,11 @@ class ExecutionResult:
     distribution_no_noise: dict[str, int] | None = None
     distribution_with_noise: dict[str, int] | None = None
     fidelity: float | None = None
+    tvd: float | None = None
+    bhattacharyya_fidelity: float | None = None
+    uncut_distribution: dict[str, int] | None = None
+    reconstructed_distribution: dict[str, int] | None = None
+    cutting_overhead: float = 0.0
     start_time: float | None = None
     end_time: float | None = None
     execution_time: float | None = None

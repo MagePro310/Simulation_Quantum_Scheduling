@@ -18,14 +18,14 @@ from pathlib import Path
 # Support running this script directly from any working directory.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from source.component.help_function.result_serialization import serialize_result
+from source.component.help_function.result_serialization import serialize_result, print_schedule_result
 from source.component.dataclass.result_schedule import ResultOfSchedule
 from source.flow.input.phase_input import ConcreteInputPhase
 from source.flow.schedule.phase_schedule import ConcreteSchedulePhase
 from source.flow.execution.orchestrator import ConcreteExecutionPhase
 
 
-def run_algorithm(json_output: Path | None = None):
+def run_algorithm(json_output: Path | None = None, cutting_policy: str = "greedy"):
     """Run the scheduling algorithm and optionally save results to JSON."""
 
     # Initialize result_Schedule
@@ -41,7 +41,7 @@ def run_algorithm(json_output: Path | None = None):
     algorithm = FFD()  # Replace with your algorithm
 
     # Schedule Phase
-    schedule_result = ConcreteSchedulePhase(algorithm=algorithm).execute(
+    schedule_result = ConcreteSchedulePhase(algorithm=algorithm, cutting_policy=cutting_policy).execute(
         input_job, machines_set, capture_result_schedule
     )
 
@@ -49,6 +49,9 @@ def run_algorithm(json_output: Path | None = None):
     results = ConcreteExecutionPhase().execute(
         machines_set, schedule_result, capture_result_schedule=capture_result_schedule
     )
+
+    # Print scheduling results to terminal
+    print_schedule_result(capture_result_schedule, schedule_result)
 
     # Write JSON output if requested
     if json_output:
@@ -67,6 +70,13 @@ if __name__ == "__main__":
         type=Path,
         help="Path to write structured JSON results for batch processing"
     )
+    parser.add_argument(
+        "--cutting-policy",
+        type=str,
+        choices=["greedy", "half"],
+        default="greedy",
+        help="Circuit cutting policy: 'greedy' (max capacity chunks) or 'half' (split in half)"
+    )
     args = parser.parse_args()
 
-    run_algorithm(json_output=args.json_output)
+    run_algorithm(json_output=args.json_output, cutting_policy=args.cutting_policy)

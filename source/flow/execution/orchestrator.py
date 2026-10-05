@@ -161,11 +161,15 @@ class ConcreteExecutionPhase:
             state.active = self._update_job_results(completion, results)
             state.busy = False
 
-            # Print completions
+            # Print completions (skip subcircuits, parent job will be printed upon reconstruction)
             for job_name in completion.batch_record.job_ids:
                 if results[job_name].status == "SUCCEEDED":
                     result = results[job_name]
-                    print(f"│ Complete : {job_name:<15} (duration: {result.execution_time:.3f}s, fidelity: {result.fidelity:.4f})")
+                    info = getattr(result, "job_info", None)
+                    if info and getattr(info, "parentJob", None) is not None:
+                        continue
+                    fid_str = f"{result.fidelity:.4f}" if isinstance(result.fidelity, (int, float)) else "subcircuit"
+                    print(f"│ Complete : {job_name:<15} (duration: {result.execution_time:.3f}s, fidelity: {fid_str})")
 
     def _update_job_results(self, completion, results):
         """Update results for completed batch, return remaining active jobs."""
@@ -202,11 +206,73 @@ class ConcreteExecutionPhase:
                     for k in set(result.distribution_no_noise) | set(result.distribution_with_noise)
                 )
                 result.fidelity = overlap / result.completed_shots if result.completed_shots > 0 else 1.0
+
+                # If this is a cut subcircuit, check if all subcircuits have actually completed
+                info = getattr(result, "job_info", None)
+                if info and getattr(info, "parentJob", None) and getattr(info.parentJob, "cutting_context", None):
+                    parent_job = info.parentJob
+                    ctx = parent_job.cutting_context
+                    child_results = [r for r in results.values() if r.job_info and getattr(r.job_info, "parentJob", None) is parent_job]
+                    all_done = (
+                        len(child_results) == len(ctx.subcircuits)
+                        and all(r.status == "SUCCEEDED" for r in child_results)
+                        and all(label in ctx.sub_results for label in ctx.subcircuits.keys())
+                    )
+                    if all_done and not getattr(ctx, "reconstructed", False):
+                        ctx.reconstructed = True
+                        self._reconstruct_parent_job(parent_job, results)
             else:
                 result.status = "RUNNING"
                 remaining.append(job_name)
 
         return remaining
+
+    def _reconstruct_parent_job(self, parent_job, results):
+        """Reconstruct parent job shots and evaluate fidelity."""
+        from source.flow.execution.circuit_reconstructor import CircuitReconstructor
+
+        parent_name = parent_job.job_name or "parent_job"
+        ctx = parent_job.cutting_context
+        shots = parent_job.shots or 1024
+
+        try:
+            uncut_counts, recon_counts, fidelity, tvd, overlap = CircuitReconstructor.reconstruct_distribution(
+                ctx, shots=shots
+            )
+
+            # Store in parent execution result
+            child_results = [r for r in results.values() if r.job_info and getattr(r.job_info, "parentJob", None) is parent_job]
+            p_start = min((r.start_time for r in child_results if r.start_time is not None), default=0.0)
+            # Completion time is the finish timestamp of the last subjob
+            p_end = max((r.end_time for r in child_results if r.end_time is not None), default=0.0)
+            # Duration is the total execution time of all subjobs combined
+            p_duration = sum(r.execution_time for r in child_results if r.execution_time is not None)
+
+            overhead = getattr(parent_job, "cutting_overhead", 0.0)
+
+            results[parent_name] = ExecutionResult(
+                job_info=parent_job,
+                assigned_machine="cut_reconstruction",
+                distribution_no_noise=recon_counts,
+                distribution_with_noise=recon_counts,
+                execution_time=p_duration,
+                start_time=p_start,
+                end_time=p_end,
+                requested_shots=shots,
+                completed_shots=shots,
+                fidelity=fidelity,
+                status="SUCCEEDED",
+                tvd=tvd,
+                bhattacharyya_fidelity=fidelity,
+                uncut_distribution=uncut_counts,
+                reconstructed_distribution=recon_counts,
+                cutting_overhead=overhead,
+            )
+
+            overhead_info = f", overhead: {overhead:g}" if overhead > 0 else ""
+            print(f"│ Complete : {parent_name:<15} (duration: {p_duration:.3f}s, completion: {p_end:.3f}s, fidelity: {fidelity:.4f}, TVD: {tvd:.4f}{overhead_info})")
+        except Exception as e:
+            print(f"│ Circuit reconstruction failed for {parent_name}: {e}")
 
     def _block_failed_dependents(self, scheduler_job, results):
         """Mark jobs as BLOCKED if their dependencies failed."""
@@ -334,6 +400,74 @@ class ConcreteExecutionPhase:
         # Apply shot limit
         if max_shots := self.quantum_runner.max_shots(machine):
             batch_record.shots = min(batch_record.shots, max_shots)
+
+        # Check if batch contains cut subcircuits
+        has_subexperiments = any(
+            getattr(scheduler_job[name].job_information, "subexperiments", None) is not None
+            for name in active_jobs
+        )
+
+        if has_subexperiments:
+            from qiskit.transpiler import generate_preset_pass_manager
+            from qiskit_ibm_runtime import SamplerV2
+
+            for name in active_jobs:
+                if results[name].start_time is None:
+                    results[name].start_time = now
+                results[name].status = "RUNNING"
+
+            print(f"│ Dispatch : {machine.name:<15} → {', '.join(active_jobs)} ({batch_record.shots} shots, cut subcircuits)")
+
+            try:
+                job_counts = {}
+                total_duration = 0.0
+                pass_manager = generate_preset_pass_manager(
+                    optimization_level=1, backend=machine.quantum_machine, seed_transpiler=seed
+                )
+                sampler = SamplerV2(mode=machine.quantum_machine)
+
+                for name in active_jobs:
+                    info = scheduler_job[name].job_information
+                    if info.subexperiments is not None:
+                        isa_subexpts = pass_manager.run(info.subexperiments)
+                        duration_per_shot = sum(
+                            float(c.estimate_duration(machine.quantum_machine.target, unit="s"))
+                            for c in isa_subexpts
+                        )
+                        total_duration += duration_per_shot * batch_record.shots
+
+                        sub_res = sampler.run(isa_subexpts, shots=batch_record.shots).result()
+
+                        if info.parentJob and getattr(info.parentJob, "cutting_context", None):
+                            info.parentJob.cutting_context.sub_results[info.partition_label] = sub_res
+
+                        try:
+                            first_counts = dict(sub_res[0].data.observable_measurements.get_counts())
+                        except Exception:
+                            first_counts = {}
+
+                        job_counts[name] = BatchCounts(
+                            distribution_no_noise=first_counts,
+                            distribution_with_noise=first_counts,
+                        )
+                    else:
+                        single_prep = self.circuit_composer.prepare_batch(
+                            machine, {name: info}, seed=seed
+                        )
+                        b_counts = self.quantum_runner.execute_batch(
+                            machine, single_prep, batch_record.shots, seed=seed
+                        )
+                        total_duration += float(single_prep.duration_per_shot) * batch_record.shots
+                        job_counts[name] = b_counts
+
+                batch_record.end_time = now + max(total_duration, 0.0001)
+                error = None
+            except Exception as e:
+                job_counts = None
+                error = f"Batch {batch_id} execution failed: {e}"
+
+            heapq.heappush(events, (batch_record.end_time, batch_id, BatchCompletion(batch_record, job_counts, error)))
+            return None
 
         # Prepare circuits (reuse if same jobs)
         if prepared_batch is None or prepared_batch.job_ids != batch_record.job_ids:
