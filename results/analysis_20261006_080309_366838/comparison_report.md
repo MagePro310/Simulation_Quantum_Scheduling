@@ -5,6 +5,7 @@
 | Algorithm | Status | Error |
 |-----------|--------|-------|
 | FFD | ✅ SUCCESS |  |
+| FFD_v2 | ✅ SUCCESS |  |
 | LPT | ✅ SUCCESS |  |
 | QGroup | ✅ SUCCESS |  |
 
@@ -21,27 +22,28 @@
 
 | Algorithm | Latency (s) | Difference from baseline |
 |-----------|-------------|-------------------------|
-| FFD | 0.0001597 | baseline |
-| LPT | 0.0001361 | -2.36e-05 |
-| QGroup | 0.0148 | +0.0146 |
+| FFD | 0.0001545 | baseline |
+| FFD_v2 | 0.0131 | +0.0129 |
+| LPT | 0.0001438 | -1.073e-05 |
+| QGroup | 0.0304 | +0.0302 |
 
 ## Execution Summary Metrics
 
 All times in seconds (virtual execution time) unless specified otherwise.
 
-| Metric | FFD | LPT | QGroup |
-|--------|--------|--------|--------|
-| Schedule Latency | 0.0001597 | 0.0001361 (-2.36e-05, -14.78%) | 0.0148 (+0.0146, +9145.97%) |
-| Makespan | 0.1104 | 0.0606 (-0.0498, -45.08%) | 0.0588 (-0.0516, -46.72%) |
-| Total Turnaround Time | 0.2336 | 0.0850 (-0.1486, -63.62%) | 0.0774 (-0.1562, -66.87%) |
-| Total Waiting Time | 0.0527 | 0.0126 (-0.0401, -76.09%) | 0.0061 (-0.0467, -88.46%) |
-| Total Response Time | 0.0527 | 0.0126 (-0.0401, -76.09%) | 0.0061 (-0.0467, -88.46%) |
-| Avg Turnaround Time | 0.0584 | 0.0212 (-0.0372, -63.62%) | 0.0194 (-0.0391, -66.87%) |
-| Avg Waiting Time | 0.0132 | 0.0032 (-0.0100, -76.09%) | 0.0015 (-0.0117, -88.46%) |
-| Avg Response Time | 0.0132 | 0.0032 (-0.0100, -76.09%) | 0.0015 (-0.0117, -88.46%) |
-| Job Completion Rate | 36.2334 | 65.9760 (+29.7426, +82.09%) | 68.0057 (+31.7723, +87.69%) |
-| Avg Fidelity | 0.8616 | 0.8706 (+0.0090, +1.05%) | 0.8739 (+0.0123, +1.43%) |
-| Cutting Overhead | 9.0000 | 9.0000 (0.0, 0.00%) | 9.0000 (0.0, 0.00%) |
+| Metric | FFD | FFD_v2 | LPT | QGroup |
+|--------|--------|--------|--------|--------|
+| Schedule Latency | 0.0001545 | 0.0131 (+0.0129, +8375.00%) | 0.0001438 (-1.073e-05, -6.94%) | 0.0304 (+0.0302, +19577.62%) |
+| Makespan | 0.1255 | 0.2466 (+0.1211, +96.50%) | 0.0619 (-0.0637, -50.72%) | 0.0610 (-0.0645, -51.39%) |
+| Total Turnaround Time | 0.2639 | 0.8728 (+0.6089, +230.75%) | 0.1421 (-0.1218, -46.15%) | 0.0796 (-0.1843, -69.83%) |
+| Total Waiting Time | 0.0704 | 0.0704 (0.0, 0.00%) | 0.0613 (-0.0091, -12.88%) | 0.0061 (-0.0643, -91.36%) |
+| Total Response Time | 0.0704 | 0.0704 (0.0, 0.00%) | 0.0613 (-0.0091, -12.88%) | 0.0061 (-0.0643, -91.36%) |
+| Avg Turnaround Time | 0.0660 | 0.2182 (+0.1522, +230.75%) | 0.0355 (-0.0304, -46.15%) | 0.0199 (-0.0461, -69.83%) |
+| Avg Waiting Time | 0.0176 | 0.0176 (0.0, 0.00%) | 0.0153 (-0.0023, -12.88%) | 0.0015 (-0.0161, -91.36%) |
+| Avg Response Time | 0.0176 | 0.0176 (0.0, 0.00%) | 0.0153 (-0.0023, -12.88%) | 0.0015 (-0.0161, -91.36%) |
+| Job Completion Rate | 31.8675 | 16.2174 (-15.6501, -49.11%) | 64.6635 (+32.7960, +102.91%) | 65.5587 (+33.6912, +105.72%) |
+| Avg Fidelity | 0.8579 | 0.8280 (-0.0299, -3.49%) | 0.8449 (-0.0130, -1.51%) | 0.8512 (-0.0067, -0.78%) |
+| Cutting Overhead | 9.0000 | 36.0000 (+27.0000, +300.00%) | 9.0000 (0.0, 0.00%) | 9.0000 (0.0, 0.00%) |
 
 **Metric Definitions:**
 
@@ -64,15 +66,16 @@ All times in seconds (virtual execution time) unless specified otherwise.
 | Algorithm | Succeeded | Failed | Blocked | Total |
 |-----------|-----------|--------|---------|-------|
 | FFD | 4 | 0 | 0 | 4 |
+| FFD_v2 | 4 | 0 | 0 | 4 |
 | LPT | 4 | 0 | 0 | 4 |
 | QGroup | 4 | 0 | 0 | 4 |
 
 ## Machine Utilization
 
-| Machine | FFD Util | LPT Util | QGroup Util | FFD Busy Time | LPT Busy Time | QGroup Busy Time |
-|---|---|---|---|---|---|---|
-| fake_belem | 1.0000 | 0.9808 | 1.0000 | 0.11s | 0.06s | 0.06s |
-| fake_bogota | 0.0582 | 1.0000 | 0.9401 | 0.01s | 0.06s | 0.06s |
+| Machine | FFD Util | FFD_v2 Util | LPT Util | QGroup Util | FFD Busy Time | FFD_v2 Busy Time | LPT Busy Time | QGroup Busy Time |
+|---|---|---|---|---|---|---|---|---|
+| fake_belem | 1.0000 | 1.0000 | 1.0000 | 0.8998 | 0.13s | 0.25s | 0.06s | 0.05s |
+| fake_bogota | 0.0512 | 0.5386 | 0.9775 | 1.0000 | 0.01s | 0.13s | 0.06s | 0.06s |
 
 **Note**: Utilization measures logical qubit allocation over capacity × makespan.
 
@@ -84,9 +87,19 @@ Total batches: 3
 
 | Batch | Machine | Jobs | Shots | Start | End | Duration | Status |
 |-------|---------|------|-------|-------|-----|----------|--------|
-| 1 | fake_belem | 1 | 1024 | 0.00s | 0.05s | 0.05s | SUCCEEDED |
+| 1 | fake_belem | 1 | 1024 | 0.00s | 0.07s | 0.07s | SUCCEEDED |
 | 2 | fake_bogota | 2 | 1024 | 0.00s | 0.01s | 0.01s | SUCCEEDED |
-| 3 | fake_belem | 2 | 1024 | 0.05s | 0.11s | 0.06s | SUCCEEDED |
+| 3 | fake_belem | 2 | 1024 | 0.07s | 0.13s | 0.06s | SUCCEEDED |
+
+### FFD_v2 Batches
+
+Total batches: 3
+
+| Batch | Machine | Jobs | Shots | Start | End | Duration | Status |
+|-------|---------|------|-------|-------|-----|----------|--------|
+| 1 | fake_belem | 1 | 1024 | 0.00s | 0.07s | 0.07s | SUCCEEDED |
+| 2 | fake_bogota | 3 | 1024 | 0.00s | 0.13s | 0.13s | SUCCEEDED |
+| 3 | fake_belem | 4 | 1024 | 0.07s | 0.25s | 0.18s | SUCCEEDED |
 
 ### LPT Batches
 
@@ -95,10 +108,10 @@ Total batches: 5
 | Batch | Machine | Jobs | Shots | Start | End | Duration | Status |
 |-------|---------|------|-------|-------|-----|----------|--------|
 | 1 | fake_belem | 1 | 1024 | 0.00s | 0.01s | 0.01s | SUCCEEDED |
-| 2 | fake_bogota | 1 | 1024 | 0.00s | 0.01s | 0.01s | SUCCEEDED |
-| 3 | fake_bogota | 1 | 1024 | 0.01s | 0.01s | 0.01s | SUCCEEDED |
+| 2 | fake_bogota | 1 | 1024 | 0.00s | 0.05s | 0.05s | SUCCEEDED |
+| 3 | fake_belem | 1 | 1024 | 0.01s | 0.01s | 0.01s | SUCCEEDED |
 | 4 | fake_belem | 1 | 1024 | 0.01s | 0.06s | 0.05s | SUCCEEDED |
-| 5 | fake_bogota | 1 | 1024 | 0.01s | 0.06s | 0.05s | SUCCEEDED |
+| 5 | fake_bogota | 1 | 1024 | 0.05s | 0.06s | 0.01s | SUCCEEDED |
 
 ### QGroup Batches
 
@@ -108,7 +121,7 @@ Total batches: 4
 |-------|---------|------|-------|-------|-----|----------|--------|
 | 1 | fake_belem | 2 | 1024 | 0.00s | 0.01s | 0.01s | SUCCEEDED |
 | 2 | fake_bogota | 1 | 1024 | 0.00s | 0.01s | 0.01s | SUCCEEDED |
-| 3 | fake_belem | 1 | 1024 | 0.01s | 0.06s | 0.05s | SUCCEEDED |
+| 3 | fake_belem | 1 | 1024 | 0.01s | 0.05s | 0.05s | SUCCEEDED |
 | 4 | fake_bogota | 1 | 1024 | 0.01s | 0.06s | 0.05s | SUCCEEDED |
 
 ## Visualizations

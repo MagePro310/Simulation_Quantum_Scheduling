@@ -4,6 +4,10 @@ from collections import Counter
 
 from source.component.dataclass.execution_info import BatchCounts
 from source.component.dataclass.job_info import ExecutionResult
+from source.component.help_function.fidelity import (
+    compute_hellinger_fidelity,
+    compute_total_variation_distance,
+)
 
 
 class ResultHandler:
@@ -44,13 +48,19 @@ class ResultHandler:
             # Check completion
             if ResultHandler._is_job_complete(result):
                 result.status = "SUCCEEDED"
-                # Calculate fidelity
-                all_keys = set(result.distribution_no_noise) | set(result.distribution_with_noise)
-                overlap = sum(
-                    min(result.distribution_no_noise.get(k, 0), result.distribution_with_noise.get(k, 0))
-                    for k in all_keys
+                # Calculate fidelity and TVD using Hellinger fidelity method
+                h_fid = compute_hellinger_fidelity(
+                    result.distribution_no_noise,
+                    result.distribution_with_noise,
                 )
-                result.fidelity = overlap / result.completed_shots if result.completed_shots else 1.0
+                tvd = compute_total_variation_distance(
+                    result.distribution_no_noise,
+                    result.distribution_with_noise,
+                )
+                result.fidelity = h_fid
+                result.hellinger_fidelity = h_fid
+                result.bhattacharyya_fidelity = h_fid
+                result.tvd = tvd
                 if print_completion:
                     print(f"│ Complete : {name:<15} (duration: {result.execution_time:.3f}s, fidelity: {result.fidelity:.4f})")
             else:

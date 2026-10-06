@@ -16,6 +16,10 @@ from source.component.dataclass.machine_characteristic import MachineCharacteris
 from source.flow.execution.circuit_composer import CircuitPreparation
 from source.flow.execution.metrics_calculator import MetricsCalculator
 from source.flow.execution.quantum_simulator import QuantumExecutor
+from source.component.help_function.fidelity import (
+    compute_hellinger_fidelity,
+    compute_total_variation_distance,
+)
 
 
 @dataclass
@@ -199,13 +203,19 @@ class ConcreteExecutionPhase:
             # Check if job is done
             if result.completed_shots >= result.requested_shots:
                 result.status = "SUCCEEDED"
-                # Calculate fidelity
-                overlap = sum(
-                    min(result.distribution_no_noise.get(k, 0),
-                        result.distribution_with_noise.get(k, 0))
-                    for k in set(result.distribution_no_noise) | set(result.distribution_with_noise)
+                # Calculate fidelity and TVD using Hellinger fidelity method
+                h_fid = compute_hellinger_fidelity(
+                    result.distribution_no_noise,
+                    result.distribution_with_noise,
                 )
-                result.fidelity = overlap / result.completed_shots if result.completed_shots > 0 else 1.0
+                tvd = compute_total_variation_distance(
+                    result.distribution_no_noise,
+                    result.distribution_with_noise,
+                )
+                result.fidelity = h_fid
+                result.hellinger_fidelity = h_fid
+                result.bhattacharyya_fidelity = h_fid
+                result.tvd = tvd
 
                 # If this is a cut subcircuit, check if all subcircuits have actually completed
                 info = getattr(result, "job_info", None)
@@ -261,6 +271,7 @@ class ConcreteExecutionPhase:
                 requested_shots=shots,
                 completed_shots=shots,
                 fidelity=fidelity,
+                hellinger_fidelity=fidelity,
                 status="SUCCEEDED",
                 tvd=tvd,
                 bhattacharyya_fidelity=fidelity,
@@ -284,7 +295,7 @@ class ConcreteExecutionPhase:
 
                 failed_deps = [
                     dep_name
-                    for dep_info in job.depends_on
+                    for dep_info in (job.depends_on or [])
                     for dep_name, dep_job in scheduler_job.items()
                     if dep_job.job_information is dep_info and results[dep_name].status in {"FAILED", "BLOCKED"}
                 ]
@@ -358,7 +369,7 @@ class ConcreteExecutionPhase:
             # Check dependencies
             if not all(
                 results[dep_name].status == "SUCCEEDED"
-                for dep_info in scheduler_job[job_name].depends_on
+                for dep_info in (scheduler_job[job_name].depends_on or [])
                 for dep_name, dep_job in scheduler_job.items()
                 if dep_job.job_information is dep_info
             ):

@@ -4,6 +4,8 @@ import numpy as np
 from qiskit_aer import AerSimulator
 from qiskit_addon_cutting import reconstruct_expectation_values
 
+from source.component.help_function.fidelity import compute_hellinger_fidelity
+
 
 class CircuitReconstructor:
     """Reconstruct output bitstring probabilities from cutting subexperiments and evaluate fidelity."""
@@ -19,7 +21,7 @@ class CircuitReconstructor:
             Tuple of:
             - uncut_counts: Dictionary of {bitstring: count} from uncut baseline execution.
             - reconstructed_counts: Dictionary of {bitstring: count} reconstructed from subcircuits.
-            - bhattacharyya_fidelity: Classical fidelity score in [0.0, 1.0].
+            - fidelity: Hellinger fidelity score in [0.0, 1.0].
             - tvd: Total Variation Distance in [0.0, 1.0].
             - statistical_overlap: Statistical overlap sum_x min(p_u(x), p_r(x)) = 1 - TVD.
         """
@@ -67,13 +69,13 @@ class CircuitReconstructor:
         # 4. Metrics
         uncut_probs = np.array([uncut_counts.get(bs, 0) / shots for bs in bitstrings])
         tvd = float(0.5 * np.sum(np.abs(uncut_probs - probs_norm)))
-        bhattacharyya_fidelity = float(np.sum(np.sqrt(uncut_probs * probs_norm)) ** 2)
+        h_fidelity = compute_hellinger_fidelity(uncut_counts, reconstructed_counts)
         statistical_overlap = float(np.sum(np.minimum(uncut_probs, probs_norm)))
 
         return (
             uncut_counts,
             reconstructed_counts,
-            bhattacharyya_fidelity,
+            h_fidelity,
             tvd,
             statistical_overlap,
         )
