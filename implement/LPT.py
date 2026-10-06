@@ -14,7 +14,12 @@ from source.flow.schedule.phase_schedule import ConcreteSchedulePhase
 from source.flow.execution.orchestrator import ConcreteExecutionPhase
 
 
-def test_concrete_flow(json_output: Path | None = None, cutting_policy: str = "greedy"):
+def test_concrete_flow(
+    json_output: Path | None = None,
+    cutting_policy: str = "greedy",
+    cutting_scope: str = "exceed",
+    cut_all: bool | None = None,
+):
 
     # Initialize result_Schedule
     capture_result_schedule = ResultOfSchedule()
@@ -23,7 +28,12 @@ def test_concrete_flow(json_output: Path | None = None, cutting_policy: str = "g
 
     # Schedule Phase (change algorithm here)
     from source.algorithm.heuristic.LPT import LPT
-    schedule_result = ConcreteSchedulePhase(algorithm=LPT(), cutting_policy=cutting_policy).execute(input_job, machines_set, capture_result_schedule)
+    schedule_result = ConcreteSchedulePhase(
+        algorithm=LPT(),
+        cutting_policy=cutting_policy,
+        cutting_scope=cutting_scope,
+        cut_all=cut_all,
+    ).execute(input_job, machines_set, capture_result_schedule)
     results = ConcreteExecutionPhase().execute(machines_set, schedule_result, capture_result_schedule=capture_result_schedule)
 
     # Print scheduling results to terminal
@@ -52,6 +62,24 @@ if __name__ == "__main__":
         default="greedy",
         help="Circuit cutting policy: 'greedy' (max capacity chunks) or 'half' (split in half)"
     )
+    parser.add_argument(
+        "--cutting-scope",
+        type=str,
+        choices=["exceed", "all"],
+        default="exceed",
+        help="In half cut policy, cut 'all' circuits or only circuits that 'exceed' machine capacity (default: 'exceed')"
+    )
+    parser.add_argument(
+        "--cut-all",
+        action="store_true",
+        default=False,
+        help="Shorthand to cut all circuits in half policy (--cutting-scope all)"
+    )
     args = parser.parse_args()
 
-    test_concrete_flow(json_output=args.json_output, cutting_policy=args.cutting_policy)
+    cutting_scope = "all" if args.cut_all else args.cutting_scope
+    test_concrete_flow(
+        json_output=args.json_output,
+        cutting_policy=args.cutting_policy,
+        cutting_scope=cutting_scope,
+    )

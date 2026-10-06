@@ -157,6 +157,71 @@ def test_pre_schedule_phase_half_policy():
     assert scheduled["job_large_sub_B"].job_information.num_qubits == 3
 
 
+def test_half_partition_labels_force_cut():
+    cutter = GreedyCircuitCutter()
+    # Without force_cut, circuits <= 5 remain uncut
+    assert cutter.get_half_partition_labels(2, 5, force_cut=False) == ["A", "A"]
+    assert cutter.get_half_partition_labels(3, 5, force_cut=False) == ["A", "A", "A"]
+
+    # With force_cut=True, all circuits >= 2 are split in half
+    assert cutter.get_half_partition_labels(2, 5, force_cut=True) == ["A", "B"]
+    assert cutter.get_half_partition_labels(3, 5, force_cut=True) == ["A", "A", "B"]
+    assert cutter.get_half_partition_labels(4, 5, force_cut=True) == ["A", "A", "B", "B"]
+
+
+def test_pre_schedule_phase_scope_all():
+    # cutting_scope='all' forces all circuits with >= 2 qubits to be cut in half
+    pre_phase = PreSchedulePhase(cutting_policy="half", cutting_scope="all")
+    qc_small = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=3)
+    qc_large = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=7)
+
+    origin_jobs = {
+        "job_small": JobInfo(job_name="job_small", circuit=qc_small, num_qubits=3, shots=1024),
+        "job_large": JobInfo(job_name="job_large", circuit=qc_large, num_qubits=7, shots=1024),
+    }
+
+    machines = {
+        "belem": MachineCharacteristic(name="belem", quantum_machine=FakeBelemV2(), capacity=5),
+        "bogota": MachineCharacteristic(name="bogota", quantum_machine=FakeBogotaV2(), capacity=5),
+    }
+
+    scheduled = pre_phase.execute(origin_jobs, machines)
+
+    # In 'all' scope, both job_small and job_large are cut
+    assert "job_small" not in scheduled
+    assert "job_small_sub_A" in scheduled
+    assert "job_small_sub_B" in scheduled
+    assert scheduled["job_small_sub_A"].job_information.num_qubits == 2
+    assert scheduled["job_small_sub_B"].job_information.num_qubits == 1
+
+    assert "job_large" not in scheduled
+    assert "job_large_sub_A" in scheduled
+    assert "job_large_sub_B" in scheduled
+    assert scheduled["job_large_sub_A"].job_information.num_qubits == 4
+    assert scheduled["job_large_sub_B"].job_information.num_qubits == 3
+
+
+def test_pre_schedule_phase_option_functions():
+    pre_phase = PreSchedulePhase(cutting_policy="half", cutting_scope="exceed")
+    assert pre_phase.cutting_scope == "exceed"
+
+    # Option function: set_cutting_scope
+    pre_phase.set_cutting_scope("all")
+    assert pre_phase.cutting_scope == "all"
+
+    # Option function: set_cut_all
+    pre_phase.set_cut_all(False)
+    assert pre_phase.cutting_scope == "exceed"
+    pre_phase.set_cut_all(True)
+    assert pre_phase.cutting_scope == "all"
+
+    # Option function: configure_cutting
+    pre_phase.configure_cutting(policy="half", cut_all=False)
+    assert pre_phase.cutting_policy == "half"
+    assert pre_phase.cutting_scope == "exceed"
+
+
+
 
 def test_cutting_overhead_aggregation():
     from source.component.dataclass.result_schedule import ExecutionSummary
@@ -178,4 +243,100 @@ def test_cutting_overhead_aggregation():
     MetricsCalculator.calculate_metrics(summary, results, machines={}, now=3.0)
     # Total cutting overhead must sum: 81 + 30 + 0 = 111
     assert summary.total_cutting_overhead == 111.0
+
+
+def test_modular_half_policy_helpers():
+    from source.flow.schedule.cutting.half_policy import HalfCuttingPolicy
+
+    policy = HalfCuttingPolicy()
+    assert policy.name == "half"
+
+    # Helper: _split_qubits_in_half
+    assert policy._split_qubits_in_half(7) == (4, 3)
+    assert policy._split_qubits_in_half(2) == (1, 1)
+    assert policy._split_qubits_in_half(3) == (2, 1)
+
+    # Helper: calculate_subcircuit_sizes
+    assert policy.calculate_subcircuit_sizes(7, 5) == [4, 3]
+    assert policy.calculate_subcircuit_sizes(12, 5) == [3, 3, 3, 3]
+    assert policy.calculate_subcircuit_sizes(3, 5, force_cut=False) == [3]
+    assert policy.calculate_subcircuit_sizes(3, 5, force_cut=True) == [2, 1]
+
+    # Helper: convert_sizes_to_labels
+    assert policy.convert_sizes_to_labels([4, 3]) == ["A", "A", "A", "A", "B", "B", "B"]
+    assert policy.convert_sizes_to_labels([1, 1]) == ["A", "B"]
+
+
+def test_modular_greedy_policy_helpers():
+    from source.flow.schedule.cutting.greedy_policy import GreedyCuttingPolicy
+
+    policy = GreedyCuttingPolicy()
+    assert policy.name == "greedy"
+
+    # Helper: calculate_greedy_sizes
+    assert policy.calculate_greedy_sizes(7, 5) == [5, 2]
+    assert policy.calculate_greedy_sizes(12, 5) == [5, 5, 2]
+    assert policy.calculate_greedy_sizes(4, 5) == [4]
+
+    # get_partition_labels
+    assert policy.get_partition_labels(7, 5) == ["A"] * 5 + ["B"] * 2
+
+
+def test_cutter_pipeline_helpers():
+    from qiskit import QuantumCircuit
+    from source.flow.schedule.cutting.cutter_pipeline import CircuitCutter, get_cutting_policy
+    from source.flow.schedule.cutting.greedy_policy import GreedyCuttingPolicy
+    from source.flow.schedule.cutting.half_policy import HalfCuttingPolicy
+
+    cutter = CircuitCutter()
+
+    # _resolve_policy
+    assert isinstance(cutter._resolve_policy("greedy"), GreedyCuttingPolicy)
+    assert isinstance(cutter._resolve_policy("half"), HalfCuttingPolicy)
+    assert isinstance(cutter._resolve_policy(GreedyCuttingPolicy()), GreedyCuttingPolicy)
+
+    # _prepare_clean_circuit
+    qc = QuantumCircuit(2, 2)
+    qc.h(0)
+    qc.cx(0, 1)
+    qc.measure([0, 1], [0, 1])
+    assert qc.num_clbits == 2
+    clean = cutter._prepare_clean_circuit(qc)
+    assert clean.num_clbits == 0
+    assert clean.num_qubits == 2
+
+    # _build_computational_observables
+    pauli_list, z_strings = cutter._build_computational_observables(2)
+    assert len(z_strings) == 4
+    assert set(z_strings) == {"II", "IZ", "ZI", "ZZ"}
+    assert len(pauli_list) == 4
+
+
+def test_pre_schedule_phase_decomposed_helpers():
+    from source.component.dataclass.job_info import JobInfo
+    from source.component.dataclass.machine_characteristic import MachineCharacteristic
+    from source.component.ibm_simulator.sim_machine5qubits import FakeBelemV2
+
+    machines = {"belem": MachineCharacteristic(name="belem", quantum_machine=FakeBelemV2(), capacity=5)}
+    assert PreSchedulePhase._get_max_capacity(machines) == 5
+    assert PreSchedulePhase._get_max_capacity({}) is None
+
+    pre_phase = PreSchedulePhase(cutting_policy="half", cutting_scope="exceed")
+    job_7q = JobInfo(job_name="j7", num_qubits=7)
+    job_3q = JobInfo(job_name="j3", num_qubits=3)
+
+    # _determine_cutting_action with 'exceed' scope:
+    assert pre_phase._determine_cutting_action(job_7q, 5, "half") == (True, False)
+    assert pre_phase._determine_cutting_action(job_3q, 5, "half") == (False, False)
+
+    # _determine_cutting_action with 'all' scope:
+    pre_phase.set_cut_all(True)
+    assert pre_phase._determine_cutting_action(job_7q, 5, "half") == (True, False)
+    assert pre_phase._determine_cutting_action(job_3q, 5, "half") == (True, True)
+
+    # _wrap_uncut_job
+    wrapped = pre_phase._wrap_uncut_job(job_3q)
+    assert wrapped.job_information is job_3q
+    assert wrapped.assigned_machine is None
+
 

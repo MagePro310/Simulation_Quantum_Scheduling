@@ -50,6 +50,7 @@ class ResultOfSchedule:
     nameSchedule: str = ""
     ScheduleLatency: float = 0.0
     cutting_policy: str = "greedy"
+    cutting_scope: str = "exceed"
     execution_summary: ExecutionSummary | None = None
 
     def capture_execution(self, summary: ExecutionSummary) -> None:

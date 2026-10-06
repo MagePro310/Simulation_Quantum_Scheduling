@@ -6,8 +6,8 @@ import math
 from source.component.dataclass.execution_info import (
     BatchCounts,
     BatchExecutionRecord,
-    ExecutionSummary,
 )
+from source.component.dataclass.result_schedule import ExecutionSummary
 from source.component.dataclass.job_info import ExecutionResult, SchedulerJobInfo
 from source.component.dataclass.machine_characteristic import MachineCharacteristic
 

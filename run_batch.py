@@ -73,6 +73,7 @@ def create_csv_with_header(csv_path: Path) -> None:
         "blocked_jobs",
         "total_cutting_overhead",
         "cutting_policy",
+        "cutting_scope",
         # Nested/list fields as JSON
         "machines_json",
         "batches_json",
@@ -89,7 +90,13 @@ def create_csv_with_header(csv_path: Path) -> None:
         writer.writeheader()
 
 
-def run_algorithm(algorithm_name: str, script_path: Path, output_json: Path, cutting_policy: str = "greedy") -> tuple[str, str | None]:
+def run_algorithm(
+    algorithm_name: str,
+    script_path: Path,
+    output_json: Path,
+    cutting_policy: str = "greedy",
+    cutting_scope: str = "exceed",
+) -> tuple[str, str | None]:
     """Run algorithm script in a separate process.
 
     Returns:
@@ -103,6 +110,8 @@ def run_algorithm(algorithm_name: str, script_path: Path, output_json: Path, cut
                 str(script_path),
                 "--cutting-policy",
                 cutting_policy,
+                "--cutting-scope",
+                cutting_scope,
                 "--json-output",
                 str(output_json),
             ],
@@ -181,6 +190,7 @@ def append_result_row(
         row["blocked_jobs"] = exec_summary.get("blocked_jobs", "")
         row["total_cutting_overhead"] = exec_summary.get("total_cutting_overhead", "")
         row["cutting_policy"] = result_data.get("cutting_policy", "")
+        row["cutting_scope"] = result_data.get("cutting_scope", "")
 
         # Nested fields as JSON strings
         machines = exec_summary.get("machines", {})
@@ -203,7 +213,7 @@ def append_result_row(
             "total_waiting_time", "total_response_time", "average_turnaround_time",
             "average_waiting_time", "average_response_time", "job_completion_rate",
             "average_fidelity", "succeeded_jobs", "failed_jobs", "blocked_jobs",
-            "total_cutting_overhead", "cutting_policy",
+            "total_cutting_overhead", "cutting_policy", "cutting_scope",
             "machines_json", "batches_json", "workload_fingerprint", "machine_config",
             "seed", "queue_policy", "dependency_versions",
         ]:
@@ -225,7 +235,21 @@ def main() -> int:
         default="greedy",
         help="Circuit cutting policy to apply: 'greedy' or 'half' (default: 'greedy')",
     )
+    parser.add_argument(
+        "--cutting-scope",
+        choices=["exceed", "all"],
+        default="exceed",
+        help="In half cut policy, cut 'all' circuits or only circuits that 'exceed' machine capacity (default: 'exceed')",
+    )
+    parser.add_argument(
+        "--cut-all",
+        action="store_true",
+        default=False,
+        help="Shorthand to cut all circuits in half policy (--cutting-scope all)",
+    )
     args = parser.parse_args()
+
+    cutting_scope = "all" if args.cut_all else args.cutting_scope
 
     # Load algorithms from configuration
     if not ALGORITHMS:
@@ -233,7 +257,7 @@ def main() -> int:
         return 1
 
     print(f"Configured algorithms: {', '.join(a['name'] for a in ALGORITHMS)}")
-    print(f"Circuit cutting policy: {args.cutting_policy}")
+    print(f"Circuit cutting policy: {args.cutting_policy} (scope: {cutting_scope})")
 
     # Create timestamped CSV
     timestamp = get_batch_timestamp()
@@ -266,7 +290,7 @@ def main() -> int:
                 append_result_row(csv_path, run_index, algo_name, start_time, end_time, "FAILED", error, None)
                 continue
 
-            print(f"\n[{run_index}/{len(ALGORITHMS)}] Running {algo_name} (policy={args.cutting_policy})...")
+            print(f"\n[{run_index}/{len(ALGORITHMS)}] Running {algo_name} (policy={args.cutting_policy}, scope={cutting_scope})...")
 
             # Create temporary file for JSON output
             with tempfile.NamedTemporaryFile(
@@ -279,7 +303,13 @@ def main() -> int:
 
             try:
                 start_time = datetime.utcnow().isoformat()
-                status, error = run_algorithm(algo_name, script_path, tmp_path, cutting_policy=args.cutting_policy)
+                status, error = run_algorithm(
+                    algo_name,
+                    script_path,
+                    tmp_path,
+                    cutting_policy=args.cutting_policy,
+                    cutting_scope=cutting_scope,
+                )
                 end_time = datetime.utcnow().isoformat()
 
                 print(f"  Status: {status}")
