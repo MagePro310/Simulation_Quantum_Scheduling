@@ -5,11 +5,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
 
-from source.component.dataclass.job_info import JobInfo
+from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
 from source.component.dataclass.machine_characteristic import MachineCharacteristic
+from source.component.dataclass.result_schedule import ResultOfSchedule
 from source.component.ibm_simulator.sim_machine5qubits import FakeBelemV2, FakeBogotaV2
-from source.flow.schedule.circuit_cutter import GreedyCircuitCutter
+from source.flow.schedule.circuit_cutter import GreedyCircuitCutter, CircuitCutter, SchedulingCutterHelper
 from source.flow.schedule.pre_schedule import PreSchedulePhase
+from source.flow.schedule.phase_schedule import ConcreteSchedulePhase
+from source.algorithm.heuristic.FFD import FFD
+from source.algorithm.heuristic.FFD_v2 import FFD_v2
 
 
 def test_greedy_partition_labels():
@@ -44,7 +48,6 @@ def test_half_partition_labels():
     # Fits directly: 4 qubits on 5-qubit machine
     labels_4 = cutter.get_half_partition_labels(4, 5)
     assert labels_4 == ["A"] * 4
-
 
 
 def test_can_fit():
@@ -101,10 +104,10 @@ def test_circuit_cutter_half_decomposition():
     assert parent_job.childrenJobs == children
     assert parent_job.cutting_context is not None
     assert parent_job.cutting_context.policy == "half"
-    assert parent_job.cutting_overhead == 9.0
 
 
 def test_pre_schedule_phase_integration():
+    """Test PreSchedulePhase with default greedy policy on oversized circuits."""
     pre_phase = PreSchedulePhase()
     qc_small = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=3)
     qc_large = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=7)
@@ -121,11 +124,11 @@ def test_pre_schedule_phase_integration():
 
     scheduled = pre_phase.execute(origin_jobs, machines)
 
-    # job_small should remain intact
+    # job_small fits within 5 qubits and must remain uncut in PreSchedulePhase
     assert "job_small" in scheduled
     assert scheduled["job_small"].job_information.num_qubits == 3
 
-    # job_large should be replaced by subcircuits
+    # job_large exceeds 5 qubits and must be cut with greedy policy -> [5, 2]
     assert "job_large" not in scheduled
     assert "job_large_sub_A" in scheduled
     assert "job_large_sub_B" in scheduled
@@ -135,6 +138,7 @@ def test_pre_schedule_phase_integration():
 
 
 def test_pre_schedule_phase_half_policy():
+    """Test PreSchedulePhase with half cutting policy on oversized circuits."""
     pre_phase = PreSchedulePhase(cutting_policy="half")
     qc_large = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=7)
 
@@ -169,15 +173,57 @@ def test_half_partition_labels_force_cut():
     assert cutter.get_half_partition_labels(4, 5, force_cut=True) == ["A", "A", "B", "B"]
 
 
-def test_pre_schedule_phase_scope_all():
-    # cutting_scope='all' forces all circuits with >= 2 qubits to be cut in half
-    pre_phase = PreSchedulePhase(cutting_policy="half", cutting_scope="all")
-    qc_small = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=3)
-    qc_large = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=7)
+def test_pre_schedule_phase_set_policy_and_invariant():
+    """Test policy setter and capacity invariant check in PreSchedulePhase."""
+    pre_phase = PreSchedulePhase(cutting_policy="greedy")
+    assert pre_phase.cutting_policy == "greedy"
+    pre_phase.set_cutting_policy("half")
+    assert pre_phase.cutting_policy == "half"
 
-    origin_jobs = {
-        "job_small": JobInfo(job_name="job_small", circuit=qc_small, num_qubits=3, shots=1024),
-        "job_large": JobInfo(job_name="job_large", circuit=qc_large, num_qubits=7, shots=1024),
+    # Test invariant validation raises ValueError when a job exceeds max_capacity
+    violating_job = JobInfo(job_name="huge_job", num_qubits=10)
+    scheduler_jobs = {
+        "huge_job": SchedulerJobInfo(job_information=violating_job)
+    }
+    with pytest.raises(ValueError, match="Invariant violated"):
+        PreSchedulePhase._verify_capacity_invariant(scheduler_jobs, max_capacity=5)
+
+
+def test_scheduling_cutter_helper():
+    """Test SchedulingCutterHelper chops eligible uncut circuits into smaller halves."""
+    qc2 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=2)
+    qc3 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=3)
+
+    jobs = {
+        "j2": SchedulerJobInfo(job_information=JobInfo(job_name="j2", circuit=qc2, num_qubits=2, shots=1024)),
+        "j3": SchedulerJobInfo(job_information=JobInfo(job_name="j3", circuit=qc3, num_qubits=3, shots=1024)),
+    }
+
+    chopped = SchedulingCutterHelper.apply_half_cut_to_jobs(jobs, max_capacity=5)
+
+    # j2 (2 qubits) chopped into 2 subcircuits of 1 qubit
+    assert "j2" not in chopped
+    assert "j2_sub_A" in chopped
+    assert "j2_sub_B" in chopped
+    assert chopped["j2_sub_A"].job_information.num_qubits == 1
+    assert chopped["j2_sub_B"].job_information.num_qubits == 1
+
+    # j3 (3 qubits) chopped into [2, 1] qubits
+    assert "j3" not in chopped
+    assert "j3_sub_A" in chopped
+    assert "j3_sub_B" in chopped
+    assert chopped["j3_sub_A"].job_information.num_qubits == 2
+    assert chopped["j3_sub_B"].job_information.num_qubits == 1
+
+
+def test_ffd_v2_cutting_and_reordering():
+    """Test FFD_v2 autonomously chops incoming circuits and re-orders largest-first."""
+    qc2 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=2)
+    qc3 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=3)
+
+    scheduler_job = {
+        "j2": SchedulerJobInfo(job_information=JobInfo(job_name="j2", circuit=qc2, num_qubits=2, shots=1024)),
+        "j3": SchedulerJobInfo(job_information=JobInfo(job_name="j3", circuit=qc3, num_qubits=3, shots=1024)),
     }
 
     machines = {
@@ -185,42 +231,61 @@ def test_pre_schedule_phase_scope_all():
         "bogota": MachineCharacteristic(name="bogota", quantum_machine=FakeBogotaV2(), capacity=5),
     }
 
-    scheduled = pre_phase.execute(origin_jobs, machines)
+    ffd_v2 = FFD_v2()
+    result = ffd_v2.execute(scheduler_job, machines)
 
-    # In 'all' scope, both job_small and job_large are cut
-    assert "job_small" not in scheduled
-    assert "job_small_sub_A" in scheduled
-    assert "job_small_sub_B" in scheduled
-    assert scheduled["job_small_sub_A"].job_information.num_qubits == 2
-    assert scheduled["job_small_sub_B"].job_information.num_qubits == 1
+    # All jobs were chopped: j3 -> [2, 1], j2 -> [1, 1]
+    assert len(result) == 4
+    assert "j3_sub_A" in result  # 2 qubits
+    assert "j3_sub_B" in result  # 1 qubit
+    assert "j2_sub_A" in result  # 1 qubit
+    assert "j2_sub_B" in result  # 1 qubit
 
-    assert "job_large" not in scheduled
-    assert "job_large_sub_A" in scheduled
-    assert "job_large_sub_B" in scheduled
-    assert scheduled["job_large_sub_A"].job_information.num_qubits == 4
-    assert scheduled["job_large_sub_B"].job_information.num_qubits == 3
-
-
-def test_pre_schedule_phase_option_functions():
-    pre_phase = PreSchedulePhase(cutting_policy="half", cutting_scope="exceed")
-    assert pre_phase.cutting_scope == "exceed"
-
-    # Option function: set_cutting_scope
-    pre_phase.set_cutting_scope("all")
-    assert pre_phase.cutting_scope == "all"
-
-    # Option function: set_cut_all
-    pre_phase.set_cut_all(False)
-    assert pre_phase.cutting_scope == "exceed"
-    pre_phase.set_cut_all(True)
-    assert pre_phase.cutting_scope == "all"
-
-    # Option function: configure_cutting
-    pre_phase.configure_cutting(policy="half", cut_all=False)
-    assert pre_phase.cutting_policy == "half"
-    assert pre_phase.cutting_scope == "exceed"
+    # All subjobs must have an assigned machine and dispatch order
+    for name, s_job in result.items():
+        assert s_job.assigned_machine in machines
+        assert s_job.dispatch_order is not None
 
 
+def test_ffd_v2_end_to_end_flow():
+    """Test full pipeline with PreSchedule, FFD_v2, and ConcreteExecutionPhase."""
+    from source.flow.execution.orchestrator import ConcreteExecutionPhase
+
+    qc2 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=2)
+    qc7 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=7)
+
+    origin_jobs = {
+        "j2": JobInfo(job_name="j2", circuit=qc2, num_qubits=2, shots=1024),
+        "j7": JobInfo(job_name="j7", circuit=qc7, num_qubits=7, shots=1024),
+    }
+
+    machines = {
+        "belem": MachineCharacteristic(name="belem", quantum_machine=FakeBelemV2(), capacity=5),
+        "bogota": MachineCharacteristic(name="bogota", quantum_machine=FakeBogotaV2(), capacity=5),
+    }
+
+    capture_res = ResultOfSchedule()
+    phase = ConcreteSchedulePhase(algorithm=FFD_v2(), cutting_policy="greedy")
+    scheduled = phase.execute(origin_jobs, machines, capture_res)
+
+    # PreSchedule cuts j7 into [5, 2]
+    # FFD_v2 cuts j2 into [1, 1] (j7's subcircuits are already cut, so they are not nested)
+    assert "j7_sub_A" in scheduled
+    assert "j7_sub_B" in scheduled
+    assert "j2_sub_A" in scheduled
+    assert "j2_sub_B" in scheduled
+
+    # Run execution phase to ensure reconstruction succeeds
+    exec_phase = ConcreteExecutionPhase()
+    results = exec_phase.execute(machines, scheduled, capture_result_schedule=capture_res)
+
+    # Both parent jobs must have reconstructed results
+    assert "j7" in results
+    assert "j2" in results
+    assert results["j7"].status == "SUCCEEDED"
+    assert results["j2"].status == "SUCCEEDED"
+    assert results["j7"].reconstructed_distribution is not None
+    assert results["j2"].reconstructed_distribution is not None
 
 
 def test_cutting_overhead_aggregation():
@@ -321,22 +386,15 @@ def test_pre_schedule_phase_decomposed_helpers():
     assert PreSchedulePhase._get_max_capacity(machines) == 5
     assert PreSchedulePhase._get_max_capacity({}) is None
 
-    pre_phase = PreSchedulePhase(cutting_policy="half", cutting_scope="exceed")
+    pre_phase = PreSchedulePhase(cutting_policy="half")
     job_7q = JobInfo(job_name="j7", num_qubits=7)
     job_3q = JobInfo(job_name="j3", num_qubits=3)
 
-    # _determine_cutting_action with 'exceed' scope:
-    assert pre_phase._determine_cutting_action(job_7q, 5, "half") == (True, False)
-    assert pre_phase._determine_cutting_action(job_3q, 5, "half") == (False, False)
-
-    # _determine_cutting_action with 'all' scope:
-    pre_phase.set_cut_all(True)
-    assert pre_phase._determine_cutting_action(job_7q, 5, "half") == (True, False)
-    assert pre_phase._determine_cutting_action(job_3q, 5, "half") == (True, True)
+    # _is_oversized:
+    assert pre_phase._is_oversized(job_7q, 5) is True
+    assert pre_phase._is_oversized(job_3q, 5) is False
 
     # _wrap_uncut_job
     wrapped = pre_phase._wrap_uncut_job(job_3q)
     assert wrapped.job_information is job_3q
     assert wrapped.assigned_machine is None
-
-

@@ -6,6 +6,7 @@ RESULTS_DIR = PROJECT_ROOT / "results"
 # Add new algorithms to this list; script paths are relative to PROJECT_ROOT.
 ALGORITHMS = [
     {"name": "FFD", "script": "implement/FFD.py"},
+    {"name": "FFD_v2", "script": "implement/FFD_v2.py"},
     {"name": "LPT", "script": "implement/LPT.py"},
     {"name": "QGroup", "script": "implement/QGroup.py"},
 ]

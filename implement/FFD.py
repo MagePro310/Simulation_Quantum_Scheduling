@@ -1,3 +1,8 @@
+"""Run First Fit Decreasing (FFD) quantum scheduling algorithm.
+
+Places larger jobs first into open machine bins based on qubit footprint.
+"""
+
 import sys
 import json
 import argparse
@@ -8,38 +13,53 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from source.component.help_function.result_serialization import serialize_result, print_schedule_result
 from source.component.dataclass.result_schedule import ResultOfSchedule
-
 from source.flow.input.phase_input import ConcreteInputPhase
 from source.flow.schedule.phase_schedule import ConcreteSchedulePhase
 from source.flow.execution.orchestrator import ConcreteExecutionPhase
+from source.algorithm.heuristic.FFD import FFD
 
 
-def test_concrete_flow(
+def run_algorithm(
     json_output: Path | None = None,
     cutting_policy: str = "greedy",
     cutting_scope: str = "exceed",
     cut_all: bool | None = None,
 ):
+    """Run the FFD scheduling algorithm and optionally save results to JSON.
 
-    # Initialize result_Schedule
+    Args:
+        json_output: Optional path to save JSON results for batch execution.
+        cutting_policy: Mandatory cutting policy for oversized circuits ('greedy' or 'half').
+        cutting_scope: Compatibility parameter for cutting scope ('exceed' or 'all').
+        cut_all: Compatibility flag to cut all circuits.
+
+    Returns:
+        Execution results dictionary.
+    """
+    # 1. Initialize result schedule capture
     capture_result_schedule = ResultOfSchedule()
-    # Create input circuit, and quantum machine (notchanged))
+
+    # 2. Create input circuits and quantum machines
     input_job, machines_set = ConcreteInputPhase().create_input(capture_result_schedule)
 
-    # Schedule Phase (change algorithm here)
-    from source.algorithm.heuristic.FFD import FFD
-    schedule_result = ConcreteSchedulePhase(
-        algorithm=FFD(),
-        cutting_policy=cutting_policy,
-        cutting_scope=cutting_scope,
-        cut_all=cut_all,
-    ).execute(input_job, machines_set, capture_result_schedule)
-    results = ConcreteExecutionPhase().execute(machines_set, schedule_result, capture_result_schedule=capture_result_schedule)
+    # 3. Instantiate algorithm
+    algorithm = FFD()
 
-    # Print scheduling results to terminal
+    # 4. Schedule Phase (PreSchedule feasibility check + algorithm scheduling)
+    schedule_result = ConcreteSchedulePhase(
+        algorithm=algorithm,
+        cutting_policy=cutting_policy,
+    ).execute(input_job, machines_set, capture_result_schedule)
+
+    # 5. Execution Phase (simulation / backend execution & reconstruction)
+    results = ConcreteExecutionPhase().execute(
+        machines_set, schedule_result, capture_result_schedule=capture_result_schedule
+    )
+
+    # 6. Print scheduling results to terminal
     print_schedule_result(capture_result_schedule, schedule_result)
 
-    # Write JSON output if requested
+    # 7. Write JSON output if requested
     if json_output:
         result_data = serialize_result(capture_result_schedule)
         with open(json_output, "w", encoding="utf-8") as f:
@@ -48,38 +68,43 @@ def test_concrete_flow(
 
     return results
 
+
+# Backward compatibility alias
+test_concrete_flow = run_algorithm
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run FFD quantum scheduling algorithm")
     parser.add_argument(
         "--json-output",
         type=Path,
-        help="Path to write structured JSON results for batch processing"
+        help="Path to write structured JSON results for batch processing",
     )
     parser.add_argument(
         "--cutting-policy",
         type=str,
         choices=["greedy", "half"],
         default="greedy",
-        help="Circuit cutting policy: 'greedy' (max capacity chunks) or 'half' (split in half)"
+        help="Mandatory circuit cutting policy for oversized circuits: 'greedy' or 'half'",
     )
     parser.add_argument(
         "--cutting-scope",
         type=str,
         choices=["exceed", "all"],
         default="exceed",
-        help="In half cut policy, cut 'all' circuits or only circuits that 'exceed' machine capacity (default: 'exceed')"
+        help="Cutting scope for compatibility: 'exceed' (default) or 'all'",
     )
     parser.add_argument(
         "--cut-all",
         action="store_true",
         default=False,
-        help="Shorthand to cut all circuits in half policy (--cutting-scope all)"
+        help="Legacy shorthand to cut all circuits",
     )
     args = parser.parse_args()
 
-    cutting_scope = "all" if args.cut_all else args.cutting_scope
-    test_concrete_flow(
+    run_algorithm(
         json_output=args.json_output,
         cutting_policy=args.cutting_policy,
-        cutting_scope=cutting_scope,
+        cutting_scope=args.cutting_scope,
+        cut_all=args.cut_all,
     )

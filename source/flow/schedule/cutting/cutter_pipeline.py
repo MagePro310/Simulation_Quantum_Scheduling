@@ -15,6 +15,40 @@ from source.flow.schedule.cutting.base_policy import BaseCuttingPolicy
 from source.flow.schedule.cutting.greedy_policy import GreedyCuttingPolicy
 from source.flow.schedule.cutting.half_policy import HalfCuttingPolicy
 
+# -----------------------------------------------------------------------------
+# Qiskit 2.x compatibility patch for qiskit-addon-cutting
+# In Qiskit 2.x, circuit.cregs constructs new wrapper objects on access,
+# causing `circuit.cregs[-1] is reg` to fail identity check in qiskit-addon-cutting.
+# We patch it safely at import time using value equality (==).
+# -----------------------------------------------------------------------------
+try:
+    import qiskit_addon_cutting.qpd.decompose as _qpd_decompose
+    from qiskit.circuit import ClassicalRegister, CircuitInstruction
+    from qiskit.circuit.library import Measure
+
+    def _safe_decompose_qpd_measurements(circuit: QuantumCircuit, inplace: bool = True) -> QuantumCircuit:
+        if not inplace:
+            circuit = circuit.copy()
+        qpd_measure_ids = [
+            i
+            for i, instruction in enumerate(circuit.data)
+            if instruction.operation.name.lower() == "qpd_measure"
+        ]
+        reg = ClassicalRegister(max(1, len(qpd_measure_ids)), name="qpd_measurements")
+        circuit.add_register(reg)
+        for idx, i in enumerate(qpd_measure_ids):
+            gate = circuit.data[i]
+            inst = CircuitInstruction(
+                operation=Measure(), qubits=[gate.qubits], clbits=[reg[idx]]
+            )
+            circuit.data[i] = inst
+        assert circuit.cregs[-1] == reg
+        return circuit
+
+    _qpd_decompose._decompose_qpd_measurements = _safe_decompose_qpd_measurements
+except Exception:
+    pass
+
 
 @dataclass
 class CuttingContext:

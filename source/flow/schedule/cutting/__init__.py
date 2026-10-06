@@ -9,6 +9,7 @@ from source.flow.schedule.cutting.cutter_pipeline import (
 )
 from source.flow.schedule.cutting.greedy_policy import GreedyCuttingPolicy
 from source.flow.schedule.cutting.half_policy import HalfCuttingPolicy
+from source.flow.schedule.cutting.schedule_cutter_helper import SchedulingCutterHelper
 
 __all__ = [
     "CircuitCutter",
@@ -18,4 +19,5 @@ __all__ = [
     "GreedyCuttingPolicy",
     "HalfCuttingPolicy",
     "get_cutting_policy",
+    "SchedulingCutterHelper",
 ]

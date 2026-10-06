@@ -1,7 +1,7 @@
-"""Run Longest Processing Time (LPT) quantum scheduling algorithm.
+"""Run First Fit Decreasing Version 2 (FFD_v2) quantum scheduling algorithm.
 
-Sorts jobs by estimated execution duration (longest first) and assigns each job
-to the least-loaded machine to minimize makespan.
+Integrates proactive circuit chopping (half-cut) before scheduling to reduce QPU slack,
+then re-orders all subcircuits decreasingly by size before bin packing.
 """
 
 import sys
@@ -17,7 +17,7 @@ from source.component.dataclass.result_schedule import ResultOfSchedule
 from source.flow.input.phase_input import ConcreteInputPhase
 from source.flow.schedule.phase_schedule import ConcreteSchedulePhase
 from source.flow.execution.orchestrator import ConcreteExecutionPhase
-from source.algorithm.heuristic.LPT import LPT
+from source.algorithm.heuristic.FFD_v2 import FFD_v2
 
 
 def run_algorithm(
@@ -26,7 +26,7 @@ def run_algorithm(
     cutting_scope: str = "exceed",
     cut_all: bool | None = None,
 ):
-    """Run the LPT scheduling algorithm and optionally save results to JSON.
+    """Run the FFD_v2 scheduling algorithm and optionally save results to JSON.
 
     Args:
         json_output: Optional path to save JSON results for batch execution.
@@ -44,9 +44,9 @@ def run_algorithm(
     input_job, machines_set = ConcreteInputPhase().create_input(capture_result_schedule)
 
     # 3. Instantiate algorithm
-    algorithm = LPT()
+    algorithm = FFD_v2()
 
-    # 4. Schedule Phase (PreSchedule feasibility check + algorithm scheduling)
+    # 4. Schedule Phase (PreSchedule feasibility check + FFD_v2 autonomous chopping & scheduling)
     schedule_result = ConcreteSchedulePhase(
         algorithm=algorithm,
         cutting_policy=cutting_policy,
@@ -75,7 +75,7 @@ test_concrete_flow = run_algorithm
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run LPT quantum scheduling algorithm")
+    parser = argparse.ArgumentParser(description="Run FFD_v2 quantum scheduling algorithm with autonomous chopping")
     parser.add_argument(
         "--json-output",
         type=Path,

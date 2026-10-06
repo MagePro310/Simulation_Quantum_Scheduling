@@ -13,7 +13,6 @@ def serialize_result(capture_result_schedule: ResultOfSchedule) -> dict:
         "nameSchedule": capture_result_schedule.nameSchedule,
         "ScheduleLatency": capture_result_schedule.ScheduleLatency,
         "cutting_policy": getattr(capture_result_schedule, "cutting_policy", "greedy"),
-        "cutting_scope": getattr(capture_result_schedule, "cutting_scope", "exceed"),
     }
 
     # Serialize execution summary if present
@@ -106,12 +105,7 @@ def print_schedule_result(
     print(f"SCHEDULING & EXECUTION RESULTS: {algo}".center(width))
     print("=" * width)
     print(f"  • Algorithm               : {algo}")
-    cutting_scope = getattr(capture_result_schedule, "cutting_scope", "exceed")
-    if cutting_policy == "half":
-        policy_display = f"half ({'all circuits' if cutting_scope == 'all' else 'exceed capacity only'})"
-    else:
-        policy_display = cutting_policy
-    print(f"  • Cutting Policy          : {policy_display}")
+    print(f"  • Cutting Policy (Pre)    : {cutting_policy}")
     print(f"  • Schedule Latency        : {latency:.6f} s")
     print(f"  • Target Workload         : {num_circuits} circuits ({circ_type}), avg {avg_qubits:.1f} qubits")
     print(f"  • Target Machines         : {machines_str}")
