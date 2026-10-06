@@ -50,7 +50,7 @@ def run_algorithm(
         cutting_policy: Mandatory cutting policy for oversized circuits ('greedy' or 'half').
         optional_cutting: Whether to apply optional cutting to remaining circuits.
         optional_cutting_policy: Strategy for optional cutting ('half', extensible).
-        queue_policy: Dispatch/backfilling policy ('strict', 'relaxed', 'backfill').
+        queue_policy: Dispatch / backfilling policy ('strict' vs 'backfill').
         seed: Random seed for transpiler and simulator reproducibility.
 
     Returns:
@@ -134,9 +134,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--queue-policy",
         type=str,
-        choices=["strict", "relaxed", "backfill"],
+        choices=["strict", "backfill"],
         default="strict",
-        help="Queue dispatch / backfilling policy: 'strict', 'relaxed', or 'backfill'",
+        help="Queue dispatch / backfilling policy: 'strict' or 'backfill' (default: 'strict')",
     )
     parser.add_argument(
         "--seed",

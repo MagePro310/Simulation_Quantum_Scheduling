@@ -1,5 +1,6 @@
 """Circuit preparation: compose and transpile quantum circuits."""
 
+from typing import Any
 from qiskit.circuit import ClassicalRegister, QuantumCircuit, QuantumRegister
 from qiskit.compiler import transpile
 
@@ -67,3 +68,77 @@ class CircuitPreparation:
             clbit_offset += job.circuit.num_clbits
 
         return merged_circuit, classical_bits
+
+    @staticmethod
+    def compose_joint_cutting_batch(
+        jobs: dict[str, JobInfo],
+    ) -> tuple[list[QuantumCircuit], dict[str, dict[str, Any]]]:
+        """Compose cut subcircuits and uncut circuits into a list of joint quantum circuits.
+
+        Returns:
+            Tuple of:
+            - joint_circuits: list of QuantumCircuit objects ready for transpilation.
+            - reg_meta: mapping from job_name to register metadata for demultiplexing:
+                - for subcircuit: {'type': 'subcircuit', 'obs': obs_reg_name, 'qpd': qpd_reg_name, 'len': n_subexpts}
+                - for uncut: {'type': 'uncut', 'meas': meas_reg_name}
+        """
+        sub_jobs = {k: v for k, v in jobs.items() if getattr(v, "subexperiments", None) is not None}
+        uncut_jobs = {k: v for k, v in jobs.items() if getattr(v, "subexperiments", None) is None}
+
+        max_sub_len = max((len(v.subexperiments) for v in sub_jobs.values()), default=1)
+
+        joint_circuits = []
+        reg_meta = {}
+
+        for i in range(max_sub_len):
+            joint_qc = QuantumCircuit()
+            q_offset = 0
+
+            # 1. Compose subcircuits
+            for name, job in sub_jobs.items():
+                sub_qc = job.subexperiments[i % len(job.subexperiments)]
+                qr = QuantumRegister(sub_qc.num_qubits, f"q_{name}")
+                joint_qc.add_register(qr)
+
+                obs_cr = next((cr for cr in sub_qc.cregs if "obs" in cr.name), sub_qc.cregs[0])
+                qpd_cr = next((cr for cr in sub_qc.cregs if "qpd" in cr.name), sub_qc.cregs[1] if len(sub_qc.cregs) > 1 else None)
+
+                joint_obs = ClassicalRegister(obs_cr.size, f"obs_{name}")
+                joint_qc.add_register(joint_obs)
+                clbits_to_map = list(joint_obs)
+
+                if qpd_cr:
+                    joint_qpd = ClassicalRegister(qpd_cr.size, f"qpd_{name}")
+                    joint_qc.add_register(joint_qpd)
+                    clbits_to_map += list(joint_qpd)
+                    reg_meta[name] = {"type": "subcircuit", "obs": f"obs_{name}", "qpd": f"qpd_{name}", "len": len(job.subexperiments)}
+                else:
+                    reg_meta[name] = {"type": "subcircuit", "obs": f"obs_{name}", "qpd": None, "len": len(job.subexperiments)}
+
+                qubits_to_map = list(range(q_offset, q_offset + sub_qc.num_qubits))
+                joint_qc.compose(sub_qc, qubits=qubits_to_map, clbits=clbits_to_map, inplace=True)
+                q_offset += sub_qc.num_qubits
+
+            # 2. Compose uncut circuits
+            for name, job in uncut_jobs.items():
+                uncut_qc = job.circuit
+                qr = QuantumRegister(uncut_qc.num_qubits, f"q_{name}")
+                joint_qc.add_register(qr)
+
+                num_clbits = uncut_qc.num_clbits if uncut_qc.num_clbits > 0 else uncut_qc.num_qubits
+                meas_cr = ClassicalRegister(num_clbits, f"meas_{name}")
+                joint_qc.add_register(meas_cr)
+                reg_meta[name] = {"type": "uncut", "meas": f"meas_{name}"}
+
+                qubits_to_map = list(range(q_offset, q_offset + uncut_qc.num_qubits))
+                if uncut_qc.num_clbits > 0:
+                    joint_qc.compose(uncut_qc, qubits=qubits_to_map, clbits=list(meas_cr), inplace=True)
+                else:
+                    joint_qc.compose(uncut_qc, qubits=qubits_to_map, inplace=True)
+                    joint_qc.measure(qubits_to_map, list(meas_cr))
+                q_offset += uncut_qc.num_qubits
+
+            joint_circuits.append(joint_qc)
+
+        return joint_circuits, reg_meta
+

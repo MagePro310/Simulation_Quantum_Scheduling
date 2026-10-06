@@ -101,8 +101,8 @@ def test_cluster_and_machine_qubit_utilization():
     assert pytest.approx(summary.cluster_qubit_utilization, rel=1e-5) == 0.40
 
 
-def test_queue_policy_strict_vs_relaxed_dispatch():
-    """Verify strict stops on Head-of-Line blocking, whereas relaxed/backfill skips to fit available capacity."""
+def test_queue_policy_strict_vs_backfill_dispatch():
+    """Verify strict stops on Head-of-Line blocking, whereas backfill skips to fit available capacity."""
     orchestrator = ConcreteExecutionPhase()
 
     qc_large = QuantumCircuit(5)
@@ -129,11 +129,12 @@ def test_queue_policy_strict_vs_relaxed_dispatch():
     assert active_strict == []
     assert queue_strict == ["large", "small"]
 
-    # Case 2: Under relaxed / backfill policy: "large" exceeds 4 -> continue! "small" (2q <= 4) is selected!
-    queue_relaxed = ["large", "small"]
-    active_relaxed = orchestrator._select_jobs(
+    # Case 2: Under backfill policy: "large" exceeds 4 -> continue! "small" (2q <= 4) is selected!
+    queue_backfill = ["large", "small"]
+    active_backfill = orchestrator._select_jobs(
         now=0.0, scheduler_job=scheduler_job, results=results,
-        queue=queue_relaxed, active=[], capacity=4, policy="relaxed"
+        queue=queue_backfill, active=[], capacity=4, policy="backfill"
     )
-    assert active_relaxed == ["small"]
-    assert queue_relaxed == ["large"]
+    assert active_backfill == ["small"]
+    assert queue_backfill == ["large"]
+

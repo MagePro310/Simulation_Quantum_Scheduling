@@ -34,3 +34,11 @@ class BatchExecutionRecord:
     error_reason: str | None = None
 
 
+@dataclass
+class BatchCompletion:
+    """Batch completion event."""
+    batch_record: BatchExecutionRecord
+    job_counts: dict[str, BatchCounts] | None
+    error: str | None
+
+
