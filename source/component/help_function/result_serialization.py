@@ -37,18 +37,14 @@ def serialize_result(capture_result_schedule: ResultOfSchedule) -> dict:
 
         result_dict["execution_summary"] = {
             "makespan": exec_sum.makespan,
-            "total_turnaround_time": exec_sum.total_turnaround_time,
-            "total_waiting_time": exec_sum.total_waiting_time,
-            "total_response_time": exec_sum.total_response_time,
             "average_turnaround_time": exec_sum.average_turnaround_time,
             "average_waiting_time": exec_sum.average_waiting_time,
-            "average_response_time": exec_sum.average_response_time,
-            "job_completion_rate": exec_sum.job_completion_rate,
             "average_fidelity": exec_sum.average_fidelity,
+            "cluster_qubit_utilization": exec_sum.cluster_qubit_utilization,
+            "total_cutting_overhead": exec_sum.total_cutting_overhead,
             "succeeded_jobs": exec_sum.succeeded_jobs,
             "failed_jobs": exec_sum.failed_jobs,
             "blocked_jobs": exec_sum.blocked_jobs,
-            "total_cutting_overhead": exec_sum.total_cutting_overhead,
             "machines": {
                 name: {
                     "machine_name": m.machine_name,
@@ -64,8 +60,8 @@ def serialize_result(capture_result_schedule: ResultOfSchedule) -> dict:
         result_dict["execution_summary"] = None
 
     # Add metadata
-    result_dict["seed"] = 0
-    result_dict["queue_policy"] = "strict"
+    result_dict["seed"] = getattr(capture_result_schedule, "seed", 0)
+    result_dict["queue_policy"] = getattr(capture_result_schedule, "queue_policy", "strict")
     result_dict["workload_fingerprint"] = f"{capture_result_schedule.numCircuits}_{capture_result_schedule.nameCircuits}"
     result_dict["machine_config"] = str(capture_result_schedule.nameMachines)
 
@@ -89,6 +85,7 @@ def print_schedule_result(
     """Print comprehensive scheduling and execution results to terminal."""
     algo = capture_result_schedule.nameSchedule or "Unknown"
     cutting_policy = getattr(capture_result_schedule, "cutting_policy", "greedy")
+    queue_policy = getattr(capture_result_schedule, "queue_policy", "strict")
     latency = capture_result_schedule.ScheduleLatency
     num_circuits = capture_result_schedule.numCircuits
     circ_type = capture_result_schedule.nameCircuits or "N/A"
@@ -106,6 +103,7 @@ def print_schedule_result(
     print("=" * width)
     print(f"  • Algorithm               : {algo}")
     print(f"  • Cutting Policy (Pre)    : {cutting_policy}")
+    print(f"  • Queue / Backfill Policy : {queue_policy}")
     print(f"  • Schedule Latency        : {latency:.6f} s")
     print(f"  • Target Workload         : {num_circuits} circuits ({circ_type}), avg {avg_qubits:.1f} qubits")
     print(f"  • Target Machines         : {machines_str}")
@@ -113,16 +111,14 @@ def print_schedule_result(
     summary = capture_result_schedule.execution_summary
     if summary:
         print("-" * width)
-        print("EXECUTION PERFORMANCE METRICS".center(width))
+        print("CORE EXECUTION PERFORMANCE METRICS".center(width))
         print("-" * width)
         print(f"  • Virtual Makespan        : {summary.makespan:.6f} s")
         print(f"  • Completed Jobs          : {summary.succeeded_jobs} succeeded, {summary.failed_jobs} failed, {summary.blocked_jobs} blocked")
-        if summary.makespan > 0:
-            print(f"  • Job Completion Rate     : {summary.job_completion_rate:.2f} jobs/s")
         print(f"  • Avg Turnaround Time     : {summary.average_turnaround_time:.6f} s")
         print(f"  • Avg Waiting Time        : {summary.average_waiting_time:.6f} s")
-        print(f"  • Avg Response Time       : {summary.average_response_time:.6f} s")
-        print(f"  • Average Fidelity        : {summary.average_fidelity:.4f}")
+        print(f"  • Avg Fidelity (Qubit-wt) : {summary.average_fidelity:.4f}")
+        print(f"  • Cluster Qubit Util      : {summary.cluster_qubit_utilization * 100:.2f}%")
         print(f"  • Total Cutting Overhead  : {summary.total_cutting_overhead:g}")
 
         if summary.machines:
@@ -130,7 +126,7 @@ def print_schedule_result(
             print("MACHINE UTILIZATION".center(width))
             print("-" * width)
             for m_name, m_stat in summary.machines.items():
-                print(f"  • {m_name:<16} : utilization {m_stat.utilization * 100:>6.2f}%, busy time {m_stat.busy_time:.6f} s, qubit-time {m_stat.qubit_time:.4f}")
+                print(f"  • {m_name:<16} : qubit space-time util {m_stat.utilization * 100:>6.2f}%, busy time {m_stat.busy_time:.6f} s, qubit-time {m_stat.qubit_time:.4f}")
 
     print("=" * width)
     print()

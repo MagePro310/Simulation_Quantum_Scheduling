@@ -35,27 +35,6 @@ COMPARISON_METRICS: list[dict[str, Any]] = [
         "lower_is_better": True,
     },
     {
-        "field": "total_turnaround_time",
-        "label": "Total Turnaround Time",
-        "description": "Sum of all job turnaround times (s)",
-        "unit": "Seconds (s)",
-        "lower_is_better": True,
-    },
-    {
-        "field": "total_waiting_time",
-        "label": "Total Waiting Time",
-        "description": "Sum of all job waiting times (s)",
-        "unit": "Seconds (s)",
-        "lower_is_better": True,
-    },
-    {
-        "field": "total_response_time",
-        "label": "Total Response Time",
-        "description": "Sum of all job response times (s)",
-        "unit": "Seconds (s)",
-        "lower_is_better": True,
-    },
-    {
         "field": "average_turnaround_time",
         "label": "Avg Turnaround Time",
         "description": "Mean turnaround time across jobs (s)",
@@ -65,29 +44,22 @@ COMPARISON_METRICS: list[dict[str, Any]] = [
     {
         "field": "average_waiting_time",
         "label": "Avg Waiting Time",
-        "description": "Mean waiting time across jobs (s)",
+        "description": "Mean actual waiting time in queue (s)",
         "unit": "Seconds (s)",
         "lower_is_better": True,
-    },
-    {
-        "field": "average_response_time",
-        "label": "Avg Response Time",
-        "description": "Mean response time across jobs (s)",
-        "unit": "Seconds (s)",
-        "lower_is_better": True,
-    },
-    {
-        "field": "job_completion_rate",
-        "label": "Job Completion Rate",
-        "description": "Throughput: completed jobs / makespan",
-        "unit": "Jobs / second",
-        "lower_is_better": False,
     },
     {
         "field": "average_fidelity",
-        "label": "Avg Fidelity",
-        "description": "Mean quantum circuit execution fidelity",
+        "label": "Avg Fidelity (Qubit-wt)",
+        "description": "Mean quantum circuit fidelity weighted by circuit qubits",
         "unit": "Score (0-1)",
+        "lower_is_better": False,
+    },
+    {
+        "field": "cluster_qubit_utilization",
+        "label": "Cluster Qubit Utilization",
+        "description": "Qubit space-time allocation over total cluster capacity × makespan",
+        "unit": "Ratio (0-1)",
         "lower_is_better": False,
     },
     {
@@ -145,6 +117,16 @@ def check_compatibility(results: list[dict[str, Any]]) -> tuple[bool, list[str]]
     seeds = set(r.get("seed", "") for r in results if r.get("process_status") == "SUCCESS")
     if len(seeds) > 1:
         warnings.append(f"Different seeds used: {seeds}")
+
+    # Check queue policies
+    policies = set(r.get("queue_policy", "") for r in results if r.get("process_status") == "SUCCESS")
+    if len(policies) > 1:
+        warnings.append(f"Different queue policies used: {policies}")
+
+    # Check cutting policies
+    cutting_policies = set(r.get("cutting_policy", "") for r in results if r.get("process_status") == "SUCCESS")
+    if len(cutting_policies) > 1:
+        warnings.append(f"Different cutting policies used: {cutting_policies}")
 
     return (True, warnings)
 
@@ -284,7 +266,8 @@ def generate_markdown_report(
         f.write(f"- **Average Qubits**: {baseline_result.get('average_qubits', 'N/A')}\n")
         f.write(f"- **Machines**: {baseline_result.get('name_machines', 'N/A')}\n")
         f.write(f"- **Seed**: {baseline_result.get('seed', 'N/A')}\n")
-        f.write(f"- **Queue Policy**: {baseline_result.get('queue_policy', 'N/A')}\n")
+        f.write(f"- **Cutting Policy**: {baseline_result.get('cutting_policy', 'N/A')} (scope: {baseline_result.get('cutting_scope', 'N/A')})\n")
+        f.write(f"- **Queue / Backfill Policy**: {baseline_result.get('queue_policy', 'N/A')}\n")
         f.write(f"- **Baseline Algorithm**: {baseline_algo}\n\n")
 
         # Scheduling Latency

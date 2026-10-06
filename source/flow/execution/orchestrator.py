@@ -72,6 +72,11 @@ class ConcreteExecutionPhase:
         now = 0.0
         print("\n=== Quantum Execution Started ===")
 
+        # Normalize queue_policy
+        queue_policy = queue_policy.lower()
+        if queue_policy in ["backfilling", "backfill"]:
+            queue_policy = "relaxed"
+
         while self._has_unfinished_jobs(results):
             # Process completed batches
             self._complete_finished_batches(now, events, machine_states, results)
@@ -101,6 +106,8 @@ class ConcreteExecutionPhase:
         MetricsCalculator.calculate_metrics(self.execution_summary, results, machines, now)
         if capture_result_schedule:
             capture_result_schedule.execution_summary = self.execution_summary
+            capture_result_schedule.queue_policy = queue_policy
+            capture_result_schedule.seed = seed
         MetricsCalculator.print_summary(self.execution_summary)
 
         # Generate Gantt Chart visualization
@@ -281,9 +288,24 @@ class ConcreteExecutionPhase:
             )
 
             overhead_info = f", overhead: {overhead:g}" if overhead > 0 else ""
-            print(f"│ Complete : {parent_name:<15} (duration: {p_duration:.3f}s, completion: {p_end:.3f}s, fidelity: {fidelity:.4f}, TVD: {tvd:.4f}{overhead_info})")
         except Exception as e:
             print(f"│ Circuit reconstruction failed for {parent_name}: {e}")
+            results[parent_name] = ExecutionResult(
+                job_info=parent_job,
+                assigned_machine="cut_reconstruction",
+                distribution_no_noise={},
+                distribution_with_noise={},
+                execution_time=0.0,
+                start_time=0.0,
+                end_time=0.0,
+                requested_shots=shots,
+                completed_shots=0,
+                fidelity=0.0,
+                hellinger_fidelity=0.0,
+                status="FAILED",
+                error_reason=f"Circuit reconstruction failed: {e}",
+                cutting_overhead=getattr(parent_job, "cutting_overhead", 0.0),
+            )
 
     def _block_failed_dependents(self, scheduler_job, results):
         """Mark jobs as BLOCKED if their dependencies failed."""

@@ -25,6 +25,8 @@ def run_algorithm(
     cutting_policy: str = "greedy",
     cutting_scope: str = "exceed",
     cut_all: bool | None = None,
+    queue_policy: str = "strict",
+    seed: int = 0,
 ):
     """Run the FFD_v2 scheduling algorithm and optionally save results to JSON.
 
@@ -33,6 +35,8 @@ def run_algorithm(
         cutting_policy: Mandatory cutting policy for oversized circuits ('greedy' or 'half').
         cutting_scope: Compatibility parameter for cutting scope ('exceed' or 'all').
         cut_all: Compatibility flag to cut all circuits.
+        queue_policy: Dispatch/backfilling policy ('strict', 'relaxed', 'backfill').
+        seed: Random seed for transpiler and simulator reproducibility.
 
     Returns:
         Execution results dictionary.
@@ -54,7 +58,11 @@ def run_algorithm(
 
     # 5. Execution Phase (simulation / backend execution & reconstruction)
     results = ConcreteExecutionPhase().execute(
-        machines_set, schedule_result, capture_result_schedule=capture_result_schedule
+        machines_set,
+        schedule_result,
+        queue_policy=queue_policy,
+        seed=seed,
+        capture_result_schedule=capture_result_schedule,
     )
 
     # 6. Print scheduling results to terminal
@@ -101,6 +109,19 @@ if __name__ == "__main__":
         default=False,
         help="Legacy shorthand to cut all circuits",
     )
+    parser.add_argument(
+        "--queue-policy",
+        type=str,
+        choices=["strict", "relaxed", "backfill"],
+        default="strict",
+        help="Queue dispatch / backfilling policy: 'strict', 'relaxed', or 'backfill'",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Random seed for transpiler and simulation reproducibility",
+    )
     args = parser.parse_args()
 
     run_algorithm(
@@ -108,4 +129,6 @@ if __name__ == "__main__":
         cutting_policy=args.cutting_policy,
         cutting_scope=args.cutting_scope,
         cut_all=args.cut_all,
+        queue_policy=args.queue_policy,
+        seed=args.seed,
     )

@@ -15,26 +15,24 @@ class MachineExecutionResult:
 class ExecutionSummary:
     """Single owner of realized execution metrics, machine reports, and batches.
 
-    Virtual times are seconds. Timing averages and fidelity include successful
-    jobs only; throughput divides successes by the full makespan. Waiting time
-    includes gaps between a job's batches. Utilization measures logical qubit
-    allocation over capacity times the full makespan, including idle intervals.
-    Scheduling wall time is recorded separately in ResultOfSchedule.
+    Virtual times are seconds. Core metrics are non-subsumed and orthogonal:
+    - makespan: total virtual execution makespan
+    - average_turnaround_time: mean (completion - arrival) across succeeded jobs
+    - average_waiting_time: mean actual waiting time in queue (TAT - active execution)
+    - average_fidelity: qubit-weighted mean circuit fidelity across succeeded jobs
+    - cluster_qubit_utilization: total qubit-time over total cluster capacity × makespan
+    - total_cutting_overhead: sum of sampling overhead gamma^2 from circuit cutting
     """
 
     makespan: float = 0.0
-    total_turnaround_time: float = 0.0
-    total_waiting_time: float = 0.0
-    total_response_time: float = 0.0
     average_turnaround_time: float = 0.0
     average_waiting_time: float = 0.0
-    average_response_time: float = 0.0
-    job_completion_rate: float = 0.0
-    average_fidelity: float = 0.0
+    average_fidelity: float = 0.0  # Qubit-weighted average fidelity
+    cluster_qubit_utilization: float = 0.0
+    total_cutting_overhead: float = 0.0
     succeeded_jobs: int = 0
     failed_jobs: int = 0
     blocked_jobs: int = 0
-    total_cutting_overhead: float = 0.0
     machines: dict[str, MachineExecutionResult] = field(default_factory=dict)
     batches: list = field(default_factory=list)
 
@@ -51,6 +49,8 @@ class ResultOfSchedule:
     ScheduleLatency: float = 0.0
     cutting_policy: str = "greedy"
     cutting_scope: str = "exceed"
+    queue_policy: str = "strict"
+    seed: int = 0
     execution_summary: ExecutionSummary | None = None
 
     def capture_execution(self, summary: ExecutionSummary) -> None:

@@ -59,20 +59,16 @@ def create_csv_with_header(csv_path: Path) -> None:
         "name_machines",
         "name_schedule",
         "schedule_latency",
-        # ExecutionSummary scalar fields
+        # ExecutionSummary pure core fields
         "makespan",
-        "total_turnaround_time",
-        "total_waiting_time",
-        "total_response_time",
         "average_turnaround_time",
         "average_waiting_time",
-        "average_response_time",
-        "job_completion_rate",
         "average_fidelity",
+        "cluster_qubit_utilization",
+        "total_cutting_overhead",
         "succeeded_jobs",
         "failed_jobs",
         "blocked_jobs",
-        "total_cutting_overhead",
         "cutting_policy",
         "cutting_scope",
         # Nested/list fields as JSON
@@ -97,6 +93,9 @@ def run_algorithm(
     output_json: Path,
     cutting_policy: str = "greedy",
     cutting_scope: str = "exceed",
+    queue_policy: str = "strict",
+    seed: int = 0,
+    timeout: int = TIMEOUT,
 ) -> tuple[str, str | None]:
     """Run algorithm script in a separate process.
 
@@ -113,12 +112,16 @@ def run_algorithm(
                 cutting_policy,
                 "--cutting-scope",
                 cutting_scope,
+                "--queue-policy",
+                queue_policy,
+                "--seed",
+                str(seed),
                 "--json-output",
                 str(output_json),
             ],
             capture_output=True,
             text=True,
-            timeout=TIMEOUT,
+            timeout=timeout,
             cwd=PROJECT_ROOT,
         )
 
@@ -129,7 +132,7 @@ def run_algorithm(
             return ("FAILED", error_msg)
 
     except subprocess.TimeoutExpired:
-        return ("FAILED", f"Process timeout ({TIMEOUT}s)")
+        return ("FAILED", f"Process timeout ({timeout}s)")
     except Exception as e:
         return ("FAILED", f"Exception: {str(e)[:500]}")
 
@@ -175,21 +178,17 @@ def append_result_row(
         row["name_schedule"] = result_data.get("nameSchedule", "")
         row["schedule_latency"] = result_data.get("ScheduleLatency", "")
 
-        # ExecutionSummary fields
+        # ExecutionSummary pure core fields
         exec_summary = result_data.get("execution_summary", {}) or {}
         row["makespan"] = exec_summary.get("makespan", "")
-        row["total_turnaround_time"] = exec_summary.get("total_turnaround_time", "")
-        row["total_waiting_time"] = exec_summary.get("total_waiting_time", "")
-        row["total_response_time"] = exec_summary.get("total_response_time", "")
         row["average_turnaround_time"] = exec_summary.get("average_turnaround_time", "")
         row["average_waiting_time"] = exec_summary.get("average_waiting_time", "")
-        row["average_response_time"] = exec_summary.get("average_response_time", "")
-        row["job_completion_rate"] = exec_summary.get("job_completion_rate", "")
         row["average_fidelity"] = exec_summary.get("average_fidelity", "")
+        row["cluster_qubit_utilization"] = exec_summary.get("cluster_qubit_utilization", "")
+        row["total_cutting_overhead"] = exec_summary.get("total_cutting_overhead", "")
         row["succeeded_jobs"] = exec_summary.get("succeeded_jobs", "")
         row["failed_jobs"] = exec_summary.get("failed_jobs", "")
         row["blocked_jobs"] = exec_summary.get("blocked_jobs", "")
-        row["total_cutting_overhead"] = exec_summary.get("total_cutting_overhead", "")
         row["cutting_policy"] = result_data.get("cutting_policy", "")
         row["cutting_scope"] = result_data.get("cutting_scope", "")
 
@@ -210,13 +209,12 @@ def append_result_row(
         # Fill with empty values for failed runs
         for key in [
             "num_circuits", "name_circuits", "average_qubits", "name_machines",
-            "name_schedule", "schedule_latency", "makespan", "total_turnaround_time",
-            "total_waiting_time", "total_response_time", "average_turnaround_time",
-            "average_waiting_time", "average_response_time", "job_completion_rate",
-            "average_fidelity", "succeeded_jobs", "failed_jobs", "blocked_jobs",
-            "total_cutting_overhead", "cutting_policy", "cutting_scope",
-            "machines_json", "batches_json", "workload_fingerprint", "machine_config",
-            "seed", "queue_policy", "dependency_versions",
+            "name_schedule", "schedule_latency", "makespan", "average_turnaround_time",
+            "average_waiting_time", "average_fidelity", "cluster_qubit_utilization",
+            "total_cutting_overhead", "succeeded_jobs", "failed_jobs", "blocked_jobs",
+            "cutting_policy", "cutting_scope", "machines_json", "batches_json",
+            "workload_fingerprint", "machine_config", "seed", "queue_policy",
+            "dependency_versions",
         ]:
             row[key] = ""
 
@@ -247,6 +245,24 @@ def main() -> int:
         action="store_true",
         default=False,
         help="Shorthand to cut all circuits in half policy (--cutting-scope all)",
+    )
+    parser.add_argument(
+        "--queue-policy",
+        choices=["strict", "relaxed", "backfill"],
+        default="strict",
+        help="Queue dispatch / backfilling policy: 'strict', 'relaxed', or 'backfill' (default: 'strict')",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Random seed for transpilation and simulation reproducibility (default: 0)",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=TIMEOUT,
+        help=f"Timeout in seconds per algorithm (default: {TIMEOUT})",
     )
     args = parser.parse_args()
 
@@ -291,7 +307,7 @@ def main() -> int:
                 append_result_row(csv_path, run_index, algo_name, start_time, end_time, "FAILED", error, None)
                 continue
 
-            print(f"\n[{run_index}/{len(ALGORITHMS)}] Running {algo_name} (policy={args.cutting_policy}, scope={cutting_scope})...")
+            print(f"\n[{run_index}/{len(ALGORITHMS)}] Running {algo_name} (policy={args.cutting_policy}, scope={cutting_scope}, queue={args.queue_policy}, seed={args.seed})...")
 
             # Create temporary file for JSON output
             with tempfile.NamedTemporaryFile(
@@ -310,6 +326,9 @@ def main() -> int:
                     tmp_path,
                     cutting_policy=args.cutting_policy,
                     cutting_scope=cutting_scope,
+                    queue_policy=args.queue_policy,
+                    seed=args.seed,
+                    timeout=args.timeout,
                 )
                 end_time = datetime.utcnow().isoformat()
 
