@@ -70,7 +70,8 @@ def create_csv_with_header(csv_path: Path) -> None:
         "failed_jobs",
         "blocked_jobs",
         "cutting_policy",
-        "cutting_scope",
+        "optional_cutting",
+        "optional_cutting_policy",
         # Nested/list fields as JSON
         "machines_json",
         "batches_json",
@@ -92,7 +93,8 @@ def run_algorithm(
     script_path: Path,
     output_json: Path,
     cutting_policy: str = "greedy",
-    cutting_scope: str = "exceed",
+    optional_cutting: bool = False,
+    optional_cutting_policy: str = "half",
     queue_policy: str = "strict",
     seed: int = 0,
     timeout: int = TIMEOUT,
@@ -103,27 +105,32 @@ def run_algorithm(
         (status, error_message) tuple where status is 'SUCCESS' or 'FAILED'
     """
 
+    cmd = [
+        sys.executable,
+        str(script_path),
+        "--cutting-policy",
+        cutting_policy,
+        "--optional-cutting-policy",
+        optional_cutting_policy,
+        "--queue-policy",
+        queue_policy,
+        "--seed",
+        str(seed),
+        "--json-output",
+        str(output_json),
+    ]
+    if optional_cutting:
+        cmd.append("--optional-cutting")
+
     try:
         result = subprocess.run(
-            [
-                sys.executable,
-                str(script_path),
-                "--cutting-policy",
-                cutting_policy,
-                "--cutting-scope",
-                cutting_scope,
-                "--queue-policy",
-                queue_policy,
-                "--seed",
-                str(seed),
-                "--json-output",
-                str(output_json),
-            ],
+            cmd,
             capture_output=True,
             text=True,
             timeout=timeout,
             cwd=PROJECT_ROOT,
         )
+
 
         if result.returncode == 0:
             return ("SUCCESS", None)
@@ -176,7 +183,10 @@ def append_result_row(
         row["average_qubits"] = result_data.get("averageQubits", "")
         row["name_machines"] = json.dumps(result_data.get("nameMachines", ""))
         row["name_schedule"] = result_data.get("nameSchedule", "")
-        row["schedule_latency"] = result_data.get("ScheduleLatency", "")
+        latency_val = result_data.get("ScheduleLatency")
+        if latency_val is None or latency_val == "":
+            latency_val = result_data.get("schedule_latency", "")
+        row["schedule_latency"] = latency_val
 
         # ExecutionSummary pure core fields
         exec_summary = result_data.get("execution_summary", {}) or {}
@@ -189,8 +199,9 @@ def append_result_row(
         row["succeeded_jobs"] = exec_summary.get("succeeded_jobs", "")
         row["failed_jobs"] = exec_summary.get("failed_jobs", "")
         row["blocked_jobs"] = exec_summary.get("blocked_jobs", "")
-        row["cutting_policy"] = result_data.get("cutting_policy", "")
-        row["cutting_scope"] = result_data.get("cutting_scope", "")
+        row["cutting_policy"] = result_data.get("exceed_cutting_policy", "")
+        row["optional_cutting"] = result_data.get("optional_cutting", False)
+        row["optional_cutting_policy"] = result_data.get("optional_cutting_policy", "")
 
         # Nested fields as JSON strings
         machines = exec_summary.get("machines", {})
@@ -212,9 +223,9 @@ def append_result_row(
             "name_schedule", "schedule_latency", "makespan", "average_turnaround_time",
             "average_waiting_time", "average_fidelity", "cluster_qubit_utilization",
             "total_cutting_overhead", "succeeded_jobs", "failed_jobs", "blocked_jobs",
-            "cutting_policy", "cutting_scope", "machines_json", "batches_json",
-            "workload_fingerprint", "machine_config", "seed", "queue_policy",
-            "dependency_versions",
+            "cutting_policy", "optional_cutting", "optional_cutting_policy",
+            "machines_json", "batches_json", "workload_fingerprint", "machine_config",
+            "seed", "queue_policy", "dependency_versions",
         ]:
             row[key] = ""
 
@@ -232,19 +243,19 @@ def main() -> int:
         "--cutting-policy",
         choices=["greedy", "half"],
         default="greedy",
-        help="Circuit cutting policy to apply: 'greedy' or 'half' (default: 'greedy')",
+        help="Mandatory cut policy for circuits exceeding machine capacity: 'greedy' or 'half' (default: 'greedy')",
     )
     parser.add_argument(
-        "--cutting-scope",
-        choices=["exceed", "all"],
-        default="exceed",
-        help="In half cut policy, cut 'all' circuits or only circuits that 'exceed' machine capacity (default: 'exceed')",
-    )
-    parser.add_argument(
-        "--cut-all",
+        "--optional-cutting",
         action="store_true",
         default=False,
-        help="Shorthand to cut all circuits in half policy (--cutting-scope all)",
+        help="Enable optional cutting for remaining eligible circuits (default: False)",
+    )
+    parser.add_argument(
+        "--optional-cutting-policy",
+        choices=["half"],
+        default="half",
+        help="Policy for optional cutting stage: 'half' (default: 'half', extensible)",
     )
     parser.add_argument(
         "--queue-policy",
@@ -266,7 +277,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    cutting_scope = "all" if args.cut_all else args.cutting_scope
+    enable_optional = args.optional_cutting
+    opt_summary = f"enabled ({args.optional_cutting_policy})" if enable_optional else "disabled (exceed only)"
 
     # Load algorithms from configuration
     if not ALGORITHMS:
@@ -274,7 +286,10 @@ def main() -> int:
         return 1
 
     print(f"Configured algorithms: {', '.join(a['name'] for a in ALGORITHMS)}")
-    print(f"Circuit cutting policy: {args.cutting_policy} (scope: {cutting_scope})")
+    print(
+        f"Circuit cutting: Mandatory exceed={args.cutting_policy}, "
+        f"Optional={opt_summary}"
+    )
 
     # Create timestamped CSV
     timestamp = get_batch_timestamp()
@@ -307,7 +322,7 @@ def main() -> int:
                 append_result_row(csv_path, run_index, algo_name, start_time, end_time, "FAILED", error, None)
                 continue
 
-            print(f"\n[{run_index}/{len(ALGORITHMS)}] Running {algo_name} (policy={args.cutting_policy}, scope={cutting_scope}, queue={args.queue_policy}, seed={args.seed})...")
+            print(f"\n[{run_index}/{len(ALGORITHMS)}] Running {algo_name} (policy={args.cutting_policy}, optional_cutting={enable_optional}, queue={args.queue_policy}, seed={args.seed})...")
 
             # Create temporary file for JSON output
             with tempfile.NamedTemporaryFile(
@@ -325,11 +340,13 @@ def main() -> int:
                     script_path,
                     tmp_path,
                     cutting_policy=args.cutting_policy,
-                    cutting_scope=cutting_scope,
+                    optional_cutting=enable_optional,
+                    optional_cutting_policy=args.optional_cutting_policy,
                     queue_policy=args.queue_policy,
                     seed=args.seed,
                     timeout=args.timeout,
                 )
+
                 end_time = datetime.utcnow().isoformat()
 
                 print(f"  Status: {status}")

@@ -11,23 +11,37 @@ from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
 
 
 class ConcreteSchedulePhase:
-    """Orchestrates pre-schedule circuit preparation and scheduling algorithms."""
+    """Orchestrates pre-schedule circuit preparation (mandatory exceed + optional) and scheduling."""
 
     def __init__(
         self,
         algorithm: Any = None,
-        cutting_policy: str = "greedy",
-        **kwargs: Any,
+        exceed_cutting_policy: str = "greedy",
+        enable_optional_cutting: bool = False,
+        optional_cutting_policy: str = "half",
     ):
         self.algorithm = algorithm
-        self.cutting_policy = cutting_policy.lower()
-        self.pre_phase = PreSchedulePhase(cutting_policy=self.cutting_policy)
+        self.exceed_cutting_policy = exceed_cutting_policy.lower()
+        self.enable_optional_cutting = enable_optional_cutting
+        self.optional_cutting_policy = optional_cutting_policy.lower()
+
+        self.pre_phase = PreSchedulePhase(
+            exceed_cutting_policy=self.exceed_cutting_policy,
+            enable_optional_cutting=self.enable_optional_cutting,
+            optional_cutting_policy=self.optional_cutting_policy,
+        )
         self.main_schedule_algorithm = MainScheduleAlgorithm()
 
-    def set_cutting_policy(self, policy: str) -> None:
-        """Set mandatory cutting policy: 'greedy' or 'half'."""
-        self.cutting_policy = policy.lower()
-        self.pre_phase.set_cutting_policy(self.cutting_policy)
+    def set_exceed_cutting_policy(self, policy: str) -> None:
+        """Set mandatory cutting policy for oversized circuits: 'greedy' or 'half'."""
+        self.exceed_cutting_policy = policy.lower()
+        self.pre_phase.set_exceed_cutting_policy(self.exceed_cutting_policy)
+
+    def set_optional_cutting(self, enable: bool = True, policy: str = "half") -> None:
+        """Configure optional cutting stage."""
+        self.enable_optional_cutting = enable
+        self.optional_cutting_policy = policy.lower()
+        self.pre_phase.set_optional_cutting(enable=enable, policy=self.optional_cutting_policy)
 
     def execute(
         self,
@@ -35,7 +49,7 @@ class ConcreteSchedulePhase:
         machines: Dict[str, Any],
         capture_result_schedule: Any,
     ) -> Dict[str, SchedulerJobInfo]:
-        """Execute pre-scheduling cutting and the chosen scheduling algorithm.
+        """Execute pre-scheduling cutting (mandatory + optional) and the chosen algorithm.
 
         Args:
             origin_job_info: Original input circuits.
@@ -45,15 +59,15 @@ class ConcreteSchedulePhase:
         Returns:
             Dictionary of SchedulerJobInfo with assignments and dispatch orders.
         """
-        # Step 1: Pre-phase ensures hardware feasibility (cuts circuits > max_capacity)
+        # Step 1: Pre-phase prepares circuits (Stage 1: mandatory exceed cut, Stage 2: optional cut)
         scheduler_job = self.pre_phase.execute(origin_job_info, machines)
 
-        # Step 2: Main schedule algorithm executes (may perform autonomous cutting, e.g. FFD_v2)
+        # Step 2: Main schedule algorithm executes
         algo_name = self.algorithm.__class__.__name__ if self.algorithm is not None else "DefaultAlgorithm"
         print(f"Executing scheduling algorithm: {algo_name}")
-        start_time = time.time()
+        start_time = time.perf_counter()
         scheduler_job = self.main_schedule_algorithm.execute(self.algorithm, scheduler_job, machines)
-        end_time = time.time()
+        end_time = time.perf_counter()
 
         # Step 3: Capture scheduling results
         self._capture(capture_result_schedule, scheduler_job, start_time, end_time)
@@ -70,4 +84,9 @@ class ConcreteSchedulePhase:
             self.algorithm.__class__.__name__ if self.algorithm is not None else "DefaultAlgorithm"
         )
         capture_result_schedule.ScheduleLatency = end_time - start_time
-        capture_result_schedule.cutting_policy = self.cutting_policy
+        capture_result_schedule.exceed_cutting_policy = self.exceed_cutting_policy
+        capture_result_schedule.optional_cutting = self.enable_optional_cutting
+        capture_result_schedule.optional_cutting_policy = (
+            self.optional_cutting_policy if self.enable_optional_cutting else None
+        )
+

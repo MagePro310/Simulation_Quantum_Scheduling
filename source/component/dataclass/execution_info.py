@@ -1,6 +1,6 @@
 """Batch contracts and reports shared by the execution phase helpers."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from qiskit import QuantumCircuit
 

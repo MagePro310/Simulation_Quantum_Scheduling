@@ -22,18 +22,27 @@ from source.algorithm.heuristic.QGroup import QGroup
 def run_algorithm(
     json_output: Path | None = None,
     cutting_policy: str = "greedy",
-    cutting_scope: str = "exceed",
-    cut_all: bool | None = None,
+    optional_cutting: bool = False,
+    optional_cutting_policy: str = "half",
     queue_policy: str = "strict",
     seed: int = 0,
 ):
     """Run the QGroup scheduling algorithm and optionally save results to JSON.
 
+    Architecture & Cutting Workflow:
+        1. Mandatory Exceed Cutting (Feasibility):
+           Circuits whose qubits exceed max machine capacity (qubits > max_capacity)
+           are ALWAYS cut to ensure they can physically run.
+           Configured via `cutting_policy` ('greedy' or 'half').
+        2. Optional Cutting (Optimization):
+           When `optional_cutting=True`, remaining uncut circuits (qubits >= 2)
+           are also cut using `optional_cutting_policy` (default: 'half', extensible).
+
     Args:
         json_output: Optional path to save JSON results for batch execution.
         cutting_policy: Mandatory cutting policy for oversized circuits ('greedy' or 'half').
-        cutting_scope: Compatibility parameter for cutting scope ('exceed' or 'all').
-        cut_all: Compatibility flag to cut all circuits.
+        optional_cutting: Whether to apply optional cutting to remaining circuits.
+        optional_cutting_policy: Strategy for optional cutting ('half', extensible).
         queue_policy: Dispatch/backfilling policy ('strict', 'relaxed', 'backfill').
         seed: Random seed for transpiler and simulator reproducibility.
 
@@ -49,10 +58,14 @@ def run_algorithm(
     # 3. Instantiate algorithm
     algorithm = QGroup()
 
-    # 4. Schedule Phase (PreSchedule feasibility check + algorithm scheduling)
+    # 4. Schedule Phase:
+    #    - Mandatory exceed cut: always active for oversized circuits
+    #    - Optional cut: active if optional_cutting=True
     schedule_result = ConcreteSchedulePhase(
         algorithm=algorithm,
-        cutting_policy=cutting_policy,
+        exceed_cutting_policy=cutting_policy,
+        enable_optional_cutting=optional_cutting,
+        optional_cutting_policy=optional_cutting_policy,
     ).execute(input_job, machines_set, capture_result_schedule)
 
     # 5. Execution Phase (simulation / backend execution & reconstruction)
@@ -93,20 +106,20 @@ if __name__ == "__main__":
         type=str,
         choices=["greedy", "half"],
         default="greedy",
-        help="Mandatory circuit cutting policy for oversized circuits: 'greedy' or 'half'",
+        help="Mandatory cut policy for circuits exceeding machine capacity: 'greedy' or 'half' (default: 'greedy')",
     )
     parser.add_argument(
-        "--cutting-scope",
-        type=str,
-        choices=["exceed", "all"],
-        default="exceed",
-        help="Cutting scope for compatibility: 'exceed' (default) or 'all'",
-    )
-    parser.add_argument(
-        "--cut-all",
+        "--optional-cutting",
         action="store_true",
         default=False,
-        help="Legacy shorthand to cut all circuits",
+        help="Enable optional cutting for remaining eligible circuits (default: False)",
+    )
+    parser.add_argument(
+        "--optional-cutting-policy",
+        type=str,
+        choices=["half"],
+        default="half",
+        help="Policy for optional cutting stage: 'half' (default: 'half', extensible)",
     )
     parser.add_argument(
         "--queue-policy",
@@ -126,8 +139,9 @@ if __name__ == "__main__":
     run_algorithm(
         json_output=args.json_output,
         cutting_policy=args.cutting_policy,
-        cutting_scope=args.cutting_scope,
-        cut_all=args.cut_all,
+        optional_cutting=args.optional_cutting,
+        optional_cutting_policy=args.optional_cutting_policy,
         queue_policy=args.queue_policy,
         seed=args.seed,
     )
+

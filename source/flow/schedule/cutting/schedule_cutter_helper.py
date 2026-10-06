@@ -8,25 +8,33 @@ from source.flow.schedule.cutting.cutter_pipeline import CircuitCutter
 class SchedulingCutterHelper:
     """Provides utilities for scheduling algorithms to cut, chop, and reorganize circuits."""
 
-    @staticmethod
-    def apply_half_cut_to_jobs(
+    @classmethod
+    def apply_cutting_to_jobs(
+        cls,
         scheduler_job: Dict[str, SchedulerJobInfo],
         max_capacity: int,
+        policy: str = "half",
         min_qubits: int = 2,
     ) -> Dict[str, SchedulerJobInfo]:
-        """Apply half-cut to all eligible uncut circuits in the scheduler job pool.
+        """Apply a specified cutting policy to all eligible uncut circuits in the scheduler job pool.
 
-        This function enables algorithms (e.g. FFD_v2) to proactively chop circuits into
-        smaller subcircuits to improve bin packing, reduce makespan, or optimize QPU utilization.
+        This function enables proactive circuit chopping (e.g. half-cut or custom policies)
+        to optimize bin packing, reduce makespan, or balance quantum machine workloads.
+
+        Preservation rules:
+            - Circuits that are already cut subcircuits (parentJob is not None) are SKIPPED
+              to maintain a strict 1-level parent-child hierarchy for reconstruction.
+            - Circuits with fewer qubits than min_qubits are preserved uncut.
 
         Args:
             scheduler_job: Current dictionary of SchedulerJobInfo.
-            max_capacity: Maximum qubit capacity of the available machines.
-            min_qubits: Minimum number of qubits required for a circuit to be split (default: 2).
+            max_capacity: Maximum qubit capacity of available machines.
+            policy: Cutting strategy name (e.g. 'half', or extensible future policies).
+            min_qubits: Minimum qubit count required to split (default: 2).
 
         Returns:
-            New dictionary of SchedulerJobInfo where eligible uncut circuits are replaced
-            by their generated child subcircuits.
+            Updated dictionary of SchedulerJobInfo where eligible uncut circuits are
+            replaced by their generated child subcircuits.
         """
         cutter = CircuitCutter()
         updated_jobs: Dict[str, SchedulerJobInfo] = {}
@@ -48,18 +56,18 @@ class SchedulingCutterHelper:
 
             if not is_already_cut and can_be_split:
                 print(
-                    f"[Scheduling Cutting Decision] Applying half-cut chopping: "
+                    f"[Optional Cutting Step] Applying {policy} cutting: "
                     f"{job_name} ({num_qubits} qubits)..."
                 )
                 children_jobs = cutter.cut_circuit(
                     parent_job=job_info,
                     max_capacity=max_capacity,
-                    policy="half",
+                    policy=policy,
                     force_cut=True,
                 )
                 sub_sizes = [c.num_qubits for c in children_jobs.values()]
                 print(
-                    f"  -> Chopped {job_name} into {len(children_jobs)} subcircuits: "
+                    f"  -> Cut {job_name} into {len(children_jobs)} subcircuits: "
                     f"{sub_sizes} qubits (overhead: {job_info.cutting_overhead:g})"
                 )
 
@@ -74,4 +82,20 @@ class SchedulingCutterHelper:
                 updated_jobs[job_name] = s_job
 
         return updated_jobs
+
+    @classmethod
+    def apply_half_cut_to_jobs(
+        cls,
+        scheduler_job: Dict[str, SchedulerJobInfo],
+        max_capacity: int,
+        min_qubits: int = 2,
+    ) -> Dict[str, SchedulerJobInfo]:
+        """Backward compatibility alias: apply half-cut to eligible uncut circuits."""
+        return cls.apply_cutting_to_jobs(
+            scheduler_job=scheduler_job,
+            max_capacity=max_capacity,
+            policy="half",
+            min_qubits=min_qubits,
+        )
+
 

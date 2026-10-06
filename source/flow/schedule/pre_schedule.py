@@ -6,40 +6,56 @@ from typing import Any, Dict
 # Add the project root to sys.path if not already there
 sys.path.append('./')
 from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
-from source.flow.schedule.circuit_cutter import CircuitCutter
+from source.flow.schedule.circuit_cutter import CircuitCutter, SchedulingCutterHelper
 
 
 class PreSchedulePhase:
-    """Prepares jobs for scheduling, cutting circuits that exceed machine capacities.
+    """Pre-schedule preparation phase for quantum circuits.
 
-    Responsibilities:
-        - Hardware feasibility only: circuits with num_qubits > max_capacity MUST be cut.
-        - Supported mandatory policies: 'greedy' (default) or 'half'.
-        - Guarantees 100% of output jobs fit within max_capacity (capacity invariant).
-        - Circuits that already fit machine capacity remain uncut in this phase.
+    Executes a structured 2-stage circuit preparation pipeline:
+
+    Stage 1: Mandatory Exceed Cut (Hardware Feasibility):
+        - ALWAYS executed by default for oversized circuits (num_qubits > max_capacity).
+        - Strategy parameter: exceed_cutting_policy ('greedy' or 'half', default: 'greedy').
+        - Guarantees 100% of circuits fit within max_capacity (capacity invariant).
+
+    Stage 2: Optional Cutting (Workload & Packing Optimization):
+        - OPTIONAL (controlled via enable_optional_cutting: bool).
+        - Strategy parameter: optional_cutting_policy (default: 'half', extensible).
+        - Applied only to remaining uncut circuits (num_qubits >= 2).
+        - Preserves already-cut subcircuits from Stage 1 (no nested subcircuits).
     """
 
     def __init__(
         self,
-        cutting_policy: str = "greedy",
-        **kwargs: Any,
+        exceed_cutting_policy: str = "greedy",
+        enable_optional_cutting: bool = False,
+        optional_cutting_policy: str = "half",
     ):
-        """Initialize PreSchedulePhase with mandatory cutting policy.
+        """Initialize PreSchedulePhase with mandatory and optional cutting configurations.
 
         Args:
-            cutting_policy: Strategy to cut oversized circuits ('greedy' or 'half').
-            **kwargs: Ignored keyword arguments for backward compatibility.
+            exceed_cutting_policy: Strategy for oversized circuits ('greedy' or 'half').
+            enable_optional_cutting: Whether to apply optional cutting to remaining circuits.
+            optional_cutting_policy: Strategy for optional cut (default: 'half', extensible).
         """
-        self.cutting_policy = cutting_policy.lower()
+        self.exceed_cutting_policy = exceed_cutting_policy.lower()
+        self.enable_optional_cutting = enable_optional_cutting
+        self.optional_cutting_policy = optional_cutting_policy.lower()
         self.circuit_cutter = CircuitCutter()
 
     # -------------------------------------------------------------------------
-    # Configuration
+    # Configuration Setters
     # -------------------------------------------------------------------------
 
-    def set_cutting_policy(self, policy: str) -> None:
-        """Set mandatory cutting policy: 'greedy' or 'half'."""
-        self.cutting_policy = policy.lower()
+    def set_exceed_cutting_policy(self, policy: str) -> None:
+        """Set mandatory cutting policy for oversized circuits: 'greedy' or 'half'."""
+        self.exceed_cutting_policy = policy.lower()
+
+    def set_optional_cutting(self, enable: bool = True, policy: str = "half") -> None:
+        """Configure optional cutting stage."""
+        self.enable_optional_cutting = enable
+        self.optional_cutting_policy = policy.lower()
 
     # -------------------------------------------------------------------------
     # Execution Pipeline
@@ -50,7 +66,7 @@ class PreSchedulePhase:
         origin_job_info: Dict[str, JobInfo],
         machines: Dict[str, Any] | None = None,
     ) -> Dict[str, SchedulerJobInfo]:
-        """Prepares jobs for scheduling by applying mandatory cutting to oversized circuits.
+        """Prepares jobs for scheduling through mandatory exceed cut and optional cut.
 
         Args:
             origin_job_info: Dictionary of original JobInfo objects.
@@ -61,7 +77,23 @@ class PreSchedulePhase:
             to satisfy num_qubits <= max_capacity.
         """
         max_capacity = self._get_max_capacity(machines)
-        policy_name = "half" if self.cutting_policy == "half" else "greedy"
+
+        # Stage 1: Mandatory Exceed Cut (Always executed for oversized circuits)
+        scheduler_job = self.execute_mandatory_cut(origin_job_info, max_capacity)
+
+        # Stage 2: Optional Cut (Executed only if enabled)
+        if self.enable_optional_cutting and max_capacity is not None:
+            scheduler_job = self.execute_optional_cut(scheduler_job, max_capacity)
+
+        return scheduler_job
+
+    def execute_mandatory_cut(
+        self,
+        origin_job_info: Dict[str, JobInfo],
+        max_capacity: int | None,
+    ) -> Dict[str, SchedulerJobInfo]:
+        """Cut all circuits exceeding maximum machine capacity using exceed_cutting_policy."""
+        policy_name = "half" if self.exceed_cutting_policy == "half" else "greedy"
         scheduler_job: Dict[str, SchedulerJobInfo] = {}
 
         for job_name, job_info in origin_job_info.items():
@@ -74,6 +106,20 @@ class PreSchedulePhase:
         # Invariant check: verify that no circuit exceeds machine capacity
         self._verify_capacity_invariant(scheduler_job, max_capacity)
         return scheduler_job
+
+    def execute_optional_cut(
+        self,
+        scheduler_job: Dict[str, SchedulerJobInfo],
+        max_capacity: int,
+    ) -> Dict[str, SchedulerJobInfo]:
+        """Apply optional_cutting_policy to all eligible uncut circuits."""
+        return SchedulingCutterHelper.apply_cutting_to_jobs(
+            scheduler_job=scheduler_job,
+            max_capacity=max_capacity,
+            policy=self.optional_cutting_policy,
+            min_qubits=2,
+        )
+
 
     # -------------------------------------------------------------------------
     # Helper Functions (Single Responsibility)

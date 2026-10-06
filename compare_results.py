@@ -265,8 +265,12 @@ def generate_markdown_report(
         f.write(f"- **Circuits**: {baseline_result.get('num_circuits', 'N/A')} ({baseline_result.get('name_circuits', 'N/A')})\n")
         f.write(f"- **Average Qubits**: {baseline_result.get('average_qubits', 'N/A')}\n")
         f.write(f"- **Machines**: {baseline_result.get('name_machines', 'N/A')}\n")
-        f.write(f"- **Seed**: {baseline_result.get('seed', 'N/A')}\n")
-        f.write(f"- **Cutting Policy**: {baseline_result.get('cutting_policy', 'N/A')} (scope: {baseline_result.get('cutting_scope', 'N/A')})\n")
+        opt_cut = baseline_result.get("optional_cutting", "False")
+        opt_cut_policy = baseline_result.get("optional_cutting_policy", "")
+        opt_cut_str = f"Enabled ({opt_cut_policy})" if str(opt_cut).lower() in ("true", "1") else "Disabled"
+        exceed_pol = baseline_result.get("cutting_policy") or baseline_result.get("exceed_cutting_policy") or "N/A"
+        f.write(f"- **Mandatory Cut (Exceed)**: {exceed_pol}\n")
+        f.write(f"- **Optional Cut (Remaining)**: {opt_cut_str}\n")
         f.write(f"- **Queue / Backfill Policy**: {baseline_result.get('queue_policy', 'N/A')}\n")
         f.write(f"- **Baseline Algorithm**: {baseline_algo}\n\n")
 
@@ -286,7 +290,7 @@ def generate_markdown_report(
             if algo == baseline_algo:
                 f.write(f"| {algo} | {format_value_for_display(latency)} | baseline |\n")
             else:
-                diff, diff_str = calculate_difference(latency, baseline_latency)
+                _, diff_str = calculate_difference(latency, baseline_latency)
                 f.write(f"| {algo} | {format_value_for_display(latency)} | {diff_str} |\n")
         f.write("\n")
 
@@ -315,7 +319,7 @@ def generate_markdown_report(
                     # Add difference from baseline in parentheses for non-baseline algorithms
                     if algo != baseline_algo:
                         baseline_val = safe_float(baseline_result.get(field))
-                        diff, diff_str = calculate_difference(val, baseline_val)
+                        _, diff_str = calculate_difference(val, baseline_val)
                         pct_str = calculate_percentage_difference(val, baseline_val)
                         row_values.append(f"{format_value_for_display(val)} ({diff_str}, {pct_str})")
                     else:
@@ -769,7 +773,7 @@ def main() -> int:
     print(f"  Loaded {len(results)} result rows")
 
     # Check compatibility
-    is_compatible, warnings = check_compatibility(results)
+    _is_compatible, warnings = check_compatibility(results)
     if warnings:
         print("\nCompatibility warnings:")
         for warning in warnings:

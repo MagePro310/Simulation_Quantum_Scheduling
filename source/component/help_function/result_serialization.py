@@ -11,9 +11,13 @@ def serialize_result(capture_result_schedule: ResultOfSchedule) -> dict:
         "averageQubits": capture_result_schedule.averageQubits,
         "nameMachines": capture_result_schedule.nameMachines,
         "nameSchedule": capture_result_schedule.nameSchedule,
-        "ScheduleLatency": capture_result_schedule.ScheduleLatency,
-        "cutting_policy": getattr(capture_result_schedule, "cutting_policy", "greedy"),
+        "ScheduleLatency": getattr(capture_result_schedule, "ScheduleLatency", 0.0),
+        "schedule_latency": getattr(capture_result_schedule, "ScheduleLatency", 0.0),
+        "exceed_cutting_policy": getattr(capture_result_schedule, "exceed_cutting_policy", "greedy"),
+        "optional_cutting": getattr(capture_result_schedule, "optional_cutting", False),
+        "optional_cutting_policy": getattr(capture_result_schedule, "optional_cutting_policy", None),
     }
+
 
     # Serialize execution summary if present
     if capture_result_schedule.execution_summary:
@@ -84,7 +88,9 @@ def print_schedule_result(
 ) -> None:
     """Print comprehensive scheduling and execution results to terminal."""
     algo = capture_result_schedule.nameSchedule or "Unknown"
-    cutting_policy = getattr(capture_result_schedule, "cutting_policy", "greedy")
+    exceed_policy = getattr(capture_result_schedule, "exceed_cutting_policy", "greedy")
+    opt_cutting = getattr(capture_result_schedule, "optional_cutting", False)
+    opt_policy = getattr(capture_result_schedule, "optional_cutting_policy", "half") or "half"
     queue_policy = getattr(capture_result_schedule, "queue_policy", "strict")
     latency = capture_result_schedule.ScheduleLatency
     num_circuits = capture_result_schedule.numCircuits
@@ -96,17 +102,21 @@ def print_schedule_result(
     else:
         machines_str = str(machines)
 
+    opt_str = f"Enabled ({opt_policy})" if opt_cutting else "Disabled (exceed only)"
+
     width = 68
     print()
     print("=" * width)
     print(f"SCHEDULING & EXECUTION RESULTS: {algo}".center(width))
     print("=" * width)
     print(f"  • Algorithm               : {algo}")
-    print(f"  • Cutting Policy (Pre)    : {cutting_policy}")
+    print(f"  • Mandatory Cut (Exceed)  : {exceed_policy} (always active for > max_capacity)")
+    print(f"  • Optional Cut (Remaining): {opt_str}")
     print(f"  • Queue / Backfill Policy : {queue_policy}")
     print(f"  • Schedule Latency        : {latency:.6f} s")
     print(f"  • Target Workload         : {num_circuits} circuits ({circ_type}), avg {avg_qubits:.1f} qubits")
     print(f"  • Target Machines         : {machines_str}")
+
 
     summary = capture_result_schedule.execution_summary
     if summary:

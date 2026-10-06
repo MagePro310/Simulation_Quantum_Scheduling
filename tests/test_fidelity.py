@@ -8,7 +8,7 @@ import pytest
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import hellinger_fidelity
 
-from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo, ExecutionResult
+from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
 from source.component.dataclass.machine_characteristic import MachineCharacteristic
 from source.component.dataclass.result_schedule import ResultOfSchedule
 from source.component.ibm_simulator.sim_machine5qubits import FakeBelemV2

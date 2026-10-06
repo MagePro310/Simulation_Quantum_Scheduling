@@ -7,8 +7,7 @@ from qiskit import QuantumCircuit
 from dataclasses import dataclass
 
 from source.component.dataclass.job_info import JobInfo, ExecutionResult, SchedulerJobInfo
-from source.component.dataclass.machine_characteristic import MachineCharacteristic
-from source.component.dataclass.result_schedule import ExecutionSummary, MachineExecutionResult
+from source.component.dataclass.result_schedule import ExecutionSummary
 from source.component.dataclass.execution_info import BatchExecutionRecord
 from source.flow.execution.metrics_calculator import MetricsCalculator
 from source.flow.execution.orchestrator import ConcreteExecutionPhase

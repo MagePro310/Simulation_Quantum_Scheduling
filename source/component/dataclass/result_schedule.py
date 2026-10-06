@@ -47,11 +47,13 @@ class ResultOfSchedule:
     nameMachines: str | list[str] = ""
     nameSchedule: str = ""
     ScheduleLatency: float = 0.0
-    cutting_policy: str = "greedy"
-    cutting_scope: str = "exceed"
+    exceed_cutting_policy: str = "greedy"
+    optional_cutting: bool = False
+    optional_cutting_policy: str | None = None
     queue_policy: str = "strict"
     seed: int = 0
     execution_summary: ExecutionSummary | None = None
+
 
     def capture_execution(self, summary: ExecutionSummary) -> None:
         """Attach the execution report without copying its metric values."""

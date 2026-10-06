@@ -1,6 +1,5 @@
 """Circuit preparation: compose and transpile quantum circuits."""
 
-import math
 from qiskit.circuit import ClassicalRegister, QuantumCircuit, QuantumRegister
 from qiskit.compiler import transpile
 

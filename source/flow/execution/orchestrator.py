@@ -14,6 +14,7 @@ from source.component.dataclass.job_info import ExecutionResult, SchedulerJobInf
 from source.component.dataclass.machine_characteristic import MachineCharacteristic
 
 from source.flow.execution.circuit_composer import CircuitPreparation
+from source.flow.execution.circuit_reconstructor import CircuitReconstructor
 from source.flow.execution.metrics_calculator import MetricsCalculator
 from source.flow.execution.quantum_simulator import QuantumExecutor
 from source.component.help_function.fidelity import (
@@ -246,14 +247,12 @@ class ConcreteExecutionPhase:
 
     def _reconstruct_parent_job(self, parent_job, results):
         """Reconstruct parent job shots and evaluate fidelity."""
-        from source.flow.execution.circuit_reconstructor import CircuitReconstructor
-
         parent_name = parent_job.job_name or "parent_job"
         ctx = parent_job.cutting_context
         shots = parent_job.shots or 1024
 
         try:
-            uncut_counts, recon_counts, fidelity, tvd, overlap = CircuitReconstructor.reconstruct_distribution(
+            uncut_counts, recon_counts, fidelity, tvd, _ = CircuitReconstructor.reconstruct_distribution(
                 ctx, shots=shots
             )
 
@@ -286,8 +285,6 @@ class ConcreteExecutionPhase:
                 reconstructed_distribution=recon_counts,
                 cutting_overhead=overhead,
             )
-
-            overhead_info = f", overhead: {overhead:g}" if overhead > 0 else ""
         except Exception as e:
             print(f"│ Circuit reconstruction failed for {parent_name}: {e}")
             results[parent_name] = ExecutionResult(

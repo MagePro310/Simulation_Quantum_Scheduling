@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from collections import defaultdict
 import math
 
@@ -210,7 +210,7 @@ class GanttChart:
                 # Batch separators inside the bar if multiple batches exist
                 if job['name'] in job_batch_segments and len(job_batch_segments[job['name']]) > 1:
                     segments = job_batch_segments[job['name']]
-                    for seg_start, seg_end, seg_shots in segments[:-1]:
+                    for _, seg_end, _ in segments[:-1]:
                         ax.vlines(
                             x=seg_end,
                             ymin=center_y - bar_height / 2.0,
