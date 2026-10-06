@@ -41,20 +41,10 @@ class SchedulingCutterHelper:
 
         for job_name, s_job in scheduler_job.items():
             job_info = s_job.job_information
-            if job_info is None:
-                updated_jobs[job_name] = s_job
-                continue
+            num_qubits = getattr(job_info, "num_qubits", 0) or getattr(getattr(job_info, "circuit", None), "num_qubits", 0)
 
-            num_qubits = job_info.num_qubits
-            if num_qubits is None and job_info.circuit is not None:
-                num_qubits = job_info.circuit.num_qubits
-
-            # Skip jobs that are already cut subcircuits (preserve 1-level parent-child relationship)
-            # or jobs that have fewer qubits than min_qubits
-            is_already_cut = job_info.parentJob is not None
-            can_be_split = num_qubits is not None and num_qubits >= min_qubits
-
-            if not is_already_cut and can_be_split:
+            # Only cut circuits that are uncut root jobs and meet minimum qubit threshold
+            if job_info and not job_info.parentJob and num_qubits >= min_qubits:
                 print(
                     f"[Optional Cutting Step] Applying {policy} cutting: "
                     f"{job_name} ({num_qubits} qubits)..."

@@ -80,14 +80,13 @@ def run_algorithm(
     # 6. Print scheduling results to terminal
     print_schedule_result(capture_result_schedule, schedule_result)
 
-    # 7. Write JSON output if requested
+    # 7. Serialize and write JSON output if requested
+    result_data = serialize_result(capture_result_schedule)
     if json_output:
-        result_data = serialize_result(capture_result_schedule)
-        with open(json_output, "w", encoding="utf-8") as f:
-            json.dump(result_data, f, indent=2)
+        Path(json_output).write_text(json.dumps(result_data, indent=2), encoding="utf-8")
         print(f"\nJSON output written to: {json_output}")
 
-    return results
+    return result_data
 
 
 # Backward compatibility alias
@@ -110,7 +109,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--optional-cutting",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=False,
         help="Enable optional cutting for remaining eligible circuits (default: False)",
     )

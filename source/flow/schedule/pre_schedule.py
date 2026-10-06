@@ -138,17 +138,10 @@ class PreSchedulePhase:
     @staticmethod
     def _is_oversized(job_info: JobInfo, max_capacity: int | None) -> bool:
         """Check whether a circuit exceeds machine capacity and requires mandatory cutting."""
-        if max_capacity is None:
+        if not max_capacity:
             return False
-
-        num_qubits = job_info.num_qubits
-        if num_qubits is None and job_info.circuit is not None:
-            num_qubits = job_info.circuit.num_qubits
-
-        if num_qubits is None:
-            return False
-
-        return num_qubits > max_capacity
+        qubits = job_info.num_qubits or getattr(job_info.circuit, "num_qubits", 0)
+        return qubits > max_capacity
 
     def _process_cut_job(
         self,
@@ -200,14 +193,11 @@ class PreSchedulePhase:
         max_capacity: int | None,
     ) -> None:
         """Validate invariant: no job exceeds maximum machine capacity after PreSchedulePhase."""
-        if max_capacity is None:
+        if not max_capacity:
             return
 
         for name, job in scheduler_jobs.items():
-            info = job.job_information
-            qubits = info.num_qubits if info and info.num_qubits is not None else (
-                info.circuit.num_qubits if info and info.circuit else 0
-            )
+            qubits = getattr(job.job_information, "num_qubits", 0) or getattr(getattr(job.job_information, "circuit", None), "num_qubits", 0)
             if qubits > max_capacity:
                 raise ValueError(
                     f"Invariant violated: job '{name}' has {qubits} qubits, "

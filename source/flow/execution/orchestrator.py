@@ -74,9 +74,8 @@ class ConcreteExecutionPhase:
         print("\n=== Quantum Execution Started ===")
 
         # Normalize queue_policy
-        queue_policy = queue_policy.lower()
-        if queue_policy in ["backfilling", "backfill"]:
-            queue_policy = "relaxed"
+        raw_policy = queue_policy.lower()
+        queue_policy = "relaxed" if raw_policy in {"backfilling", "backfill"} else raw_policy
 
         while self._has_unfinished_jobs(results):
             # Process completed batches
@@ -112,6 +111,12 @@ class ConcreteExecutionPhase:
         MetricsCalculator.print_summary(self.execution_summary)
 
         # Generate Gantt Chart visualization
+        self._generate_gantt_safely(capture_result_schedule, gantt_output_path, results, machines)
+
+        return results
+
+    def _generate_gantt_safely(self, capture_result_schedule, gantt_output_path, results, machines):
+        """Generate Gantt chart visualization safely without interrupting main flow."""
         algo_name = getattr(capture_result_schedule, "nameSchedule", "Schedule") if capture_result_schedule else "Schedule"
         if not gantt_output_path:
             from pathlib import Path
@@ -124,8 +129,6 @@ class ConcreteExecutionPhase:
             gantt.display(results, machines, output_path=gantt_output_path, execution_summary=self.execution_summary)
         except Exception as err:
             print(f"Failed to generate Gantt chart: {err}")
-
-        return results
 
     # ========== Initialization ==========
 
@@ -471,10 +474,8 @@ class ConcreteExecutionPhase:
                         if info.parentJob and getattr(info.parentJob, "cutting_context", None):
                             info.parentJob.cutting_context.sub_results[info.partition_label] = sub_res
 
-                        try:
-                            first_counts = dict(sub_res[0].data.observable_measurements.get_counts())
-                        except Exception:
-                            first_counts = {}
+                        obs_meas = getattr(getattr(sub_res[0], "data", None), "observable_measurements", None)
+                        first_counts = dict(obs_meas.get_counts()) if obs_meas else {}
 
                         job_counts[name] = BatchCounts(
                             distribution_no_noise=first_counts,

@@ -6,7 +6,6 @@ import time
 sys.path.append('./')
 
 from source.flow.schedule.pre_schedule import PreSchedulePhase
-from source.flow.schedule.main_schedule_algorithm import MainScheduleAlgorithm
 from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
 
 
@@ -17,20 +16,32 @@ class ConcreteSchedulePhase:
         self,
         algorithm: Any = None,
         exceed_cutting_policy: str = "greedy",
-        enable_optional_cutting: bool = False,
-        optional_cutting_policy: str = "half",
+        enable_optional_cutting: bool | None = None,
+        optional_cutting_policy: str | None = None,
     ):
         self.algorithm = algorithm
         self.exceed_cutting_policy = exceed_cutting_policy.lower()
-        self.enable_optional_cutting = enable_optional_cutting
-        self.optional_cutting_policy = optional_cutting_policy.lower()
+
+        # 1. Resolve optional cutting: follow caller setup if provided, else query algorithm attributes
+        self.enable_optional_cutting = (
+            enable_optional_cutting
+            if enable_optional_cutting is not None
+            else getattr(algorithm, "enable_optional_cutting", False)
+        )
+        setattr(algorithm, "enable_optional_cutting", self.enable_optional_cutting)
+
+        # 2. Resolve optional cutting policy: follow caller setup if provided, else query algorithm attributes
+        self.optional_cutting_policy = (
+            optional_cutting_policy
+            or getattr(algorithm, "optional_cutting_policy", "half")
+        ).lower()
+        setattr(algorithm, "optional_cutting_policy", self.optional_cutting_policy)
 
         self.pre_phase = PreSchedulePhase(
             exceed_cutting_policy=self.exceed_cutting_policy,
             enable_optional_cutting=self.enable_optional_cutting,
             optional_cutting_policy=self.optional_cutting_policy,
         )
-        self.main_schedule_algorithm = MainScheduleAlgorithm()
 
     def set_exceed_cutting_policy(self, policy: str) -> None:
         """Set mandatory cutting policy for oversized circuits: 'greedy' or 'half'."""
@@ -41,6 +52,8 @@ class ConcreteSchedulePhase:
         """Configure optional cutting stage."""
         self.enable_optional_cutting = enable
         self.optional_cutting_policy = policy.lower()
+        setattr(self.algorithm, "enable_optional_cutting", enable)
+        setattr(self.algorithm, "optional_cutting_policy", self.optional_cutting_policy)
         self.pre_phase.set_optional_cutting(enable=enable, policy=self.optional_cutting_policy)
 
     def execute(
@@ -62,15 +75,15 @@ class ConcreteSchedulePhase:
         # Step 1: Pre-phase prepares circuits (Stage 1: mandatory exceed cut, Stage 2: optional cut)
         scheduler_job = self.pre_phase.execute(origin_job_info, machines)
 
-        # Step 2: Main schedule algorithm executes
-        algo_name = self.algorithm.__class__.__name__ if self.algorithm is not None else "DefaultAlgorithm"
+        # Step 2: Main schedule algorithm executes directly
+        algo_name = getattr(self.algorithm, "__class__", type("Default", (), {})).__name__
         print(f"Executing scheduling algorithm: {algo_name}")
         start_time = time.perf_counter()
-        scheduler_job = self.main_schedule_algorithm.execute(self.algorithm, scheduler_job, machines)
+        scheduler_job = self.algorithm.execute(scheduler_job, machines) if self.algorithm else scheduler_job
         end_time = time.perf_counter()
 
         # Step 3: Capture scheduling results
-        self._capture(capture_result_schedule, scheduler_job, start_time, end_time)
+        self._capture(capture_result_schedule, scheduler_job=scheduler_job, start_time=start_time, end_time=end_time)
         return scheduler_job
 
     def _capture(

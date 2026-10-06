@@ -587,3 +587,86 @@ def test_end_to_end_ffd_with_optional_cutting():
     assert results["job_large"].reconstructed_distribution is not None
     assert results["job_small"].reconstructed_distribution is not None
 
+
+def test_ffd_v2_greedy_exceed_and_all_half_cut():
+    """Verify FFD_v2 executes Stage 1 (greedy exceed cut) then Stage 2 (all half cut) then FFD packing."""
+    qc7 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=7)
+    qc3 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=3)
+    qc2 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=2)
+
+    origin_jobs = {
+        "job_exceed": JobInfo(job_name="job_exceed", circuit=qc7, num_qubits=7, shots=1024),
+        "job_fit1": JobInfo(job_name="job_fit1", circuit=qc3, num_qubits=3, shots=1024),
+        "job_fit2": JobInfo(job_name="job_fit2", circuit=qc2, num_qubits=2, shots=1024),
+    }
+    machines = {
+        "belem": MachineCharacteristic(name="belem", quantum_machine=FakeBelemV2(), capacity=5),
+        "bogota": MachineCharacteristic(name="bogota", quantum_machine=FakeBogotaV2(), capacity=5),
+    }
+
+    capture_res = ResultOfSchedule()
+    # Instantiate ConcreteSchedulePhase with FFD_v2 without passing enable_optional_cutting
+    phase = ConcreteSchedulePhase(algorithm=FFD_v2(), exceed_cutting_policy="greedy")
+    scheduled = phase.execute(origin_jobs, machines, capture_res)
+
+    # 1. Metadata check: Stage 1 = greedy exceed cut, Stage 2 = half optional cut
+    assert capture_res.nameSchedule == "FFD_v2"
+    assert capture_res.exceed_cutting_policy == "greedy"
+    assert capture_res.optional_cutting is True
+    assert capture_res.optional_cutting_policy == "half"
+
+    # 2. Subcircuit check:
+    # - Stage 1 (Ban đầu): greedy cut on job_exceed (7 > 5) -> [5, 2]
+    # - Stage 2 (Xong / Sau đó): all half cut on job_fit1 (3q -> [2, 1]) and job_fit2 (2q -> [1, 1])
+    assert len(scheduled) == 6
+    assert "job_exceed_sub_A" in scheduled
+    assert "job_exceed_sub_B" in scheduled
+    assert scheduled["job_exceed_sub_A"].job_information.num_qubits == 5
+    assert scheduled["job_exceed_sub_B"].job_information.num_qubits == 2
+
+    assert "job_fit1_sub_A" in scheduled
+    assert "job_fit1_sub_B" in scheduled
+    assert scheduled["job_fit1_sub_A"].job_information.num_qubits == 2
+    assert scheduled["job_fit1_sub_B"].job_information.num_qubits == 1
+
+    assert "job_fit2_sub_A" in scheduled
+    assert "job_fit2_sub_B" in scheduled
+    assert scheduled["job_fit2_sub_A"].job_information.num_qubits == 1
+    assert scheduled["job_fit2_sub_B"].job_information.num_qubits == 1
+
+    # 3. Bin packing check: all subcircuits assigned to machines with dispatch order
+    for s_job in scheduled.values():
+        assert s_job.assigned_machine in machines
+        assert s_job.dispatch_order is not None
+
+
+def test_caller_setup_overrides_algorithm_default():
+    """Verify caller setup takes priority over algorithm defaults and vice versa."""
+    qc7 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=7)
+    qc2 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=2)
+
+    origin_jobs = {
+        "j7": JobInfo(job_name="j7", circuit=qc7, num_qubits=7, shots=1024),
+        "j2": JobInfo(job_name="j2", circuit=qc2, num_qubits=2, shots=1024),
+    }
+    machines = {
+        "m1": MachineCharacteristic(name="m1", quantum_machine=FakeBelemV2(), capacity=5),
+    }
+
+    # Case 1: Caller explicitly disables optional cutting on FFD_v2 (overriding algorithm default True)
+    capture1 = ResultOfSchedule()
+    phase1 = ConcreteSchedulePhase(algorithm=FFD_v2(), enable_optional_cutting=False)
+    res1 = phase1.execute(origin_jobs, machines, capture1)
+    assert capture1.optional_cutting is False
+    assert "j2" in res1  # j2 is NOT cut because optional cutting was explicitly disabled by caller
+
+    # Case 2: Caller explicitly enables optional cutting on standard FFD (overriding algorithm default False)
+    capture2 = ResultOfSchedule()
+    phase2 = ConcreteSchedulePhase(algorithm=FFD(), enable_optional_cutting=True, optional_cutting_policy="half")
+    res2 = phase2.execute(origin_jobs, machines, capture2)
+    assert capture2.optional_cutting is True
+    assert "j2" not in res2
+    assert "j2_sub_A" in res2  # j2 IS cut because caller explicitly enabled optional cutting
+
+
+

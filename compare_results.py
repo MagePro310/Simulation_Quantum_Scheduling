@@ -265,14 +265,23 @@ def generate_markdown_report(
         f.write(f"- **Circuits**: {baseline_result.get('num_circuits', 'N/A')} ({baseline_result.get('name_circuits', 'N/A')})\n")
         f.write(f"- **Average Qubits**: {baseline_result.get('average_qubits', 'N/A')}\n")
         f.write(f"- **Machines**: {baseline_result.get('name_machines', 'N/A')}\n")
-        opt_cut = baseline_result.get("optional_cutting", "False")
-        opt_cut_policy = baseline_result.get("optional_cutting_policy", "")
-        opt_cut_str = f"Enabled ({opt_cut_policy})" if str(opt_cut).lower() in ("true", "1") else "Disabled"
-        exceed_pol = baseline_result.get("cutting_policy") or baseline_result.get("exceed_cutting_policy") or "N/A"
-        f.write(f"- **Mandatory Cut (Exceed)**: {exceed_pol}\n")
-        f.write(f"- **Optional Cut (Remaining)**: {opt_cut_str}\n")
         f.write(f"- **Queue / Backfill Policy**: {baseline_result.get('queue_policy', 'N/A')}\n")
         f.write(f"- **Baseline Algorithm**: {baseline_algo}\n\n")
+
+        # Circuit Cutting Configurations
+        f.write("### Circuit Cutting Configurations\n\n")
+        f.write("| Algorithm | Mandatory Cut (Exceed) | Optional Cut (Remaining) |\n")
+        f.write("|-----------|------------------------|-------------------------|\n")
+        for algo in algorithm_names:
+            res = results_by_algo[algo]
+            if res.get("process_status") != "SUCCESS":
+                continue
+            exceed_p = res.get("cutting_policy") or res.get("exceed_cutting_policy") or "greedy"
+            is_opt = str(res.get("optional_cutting", "False")).lower() in ("true", "1")
+            opt_p = res.get("optional_cutting_policy", "")
+            opt_s = f"Enabled ({opt_p})" if is_opt else "Disabled (exceed only)"
+            f.write(f"| {algo} | {exceed_p} | {opt_s} |\n")
+        f.write("\n")
 
         # Scheduling Latency
         f.write("## Scheduling Latency (wall-clock)\n\n")

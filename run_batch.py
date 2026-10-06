@@ -1,46 +1,39 @@
 #!/usr/bin/env python3
-from pathlib import Path
-PROJECT_ROOT = Path(__file__).resolve().parent
-RESULTS_DIR = PROJECT_ROOT / "results"
-
-# Add new algorithms to this list; script paths are relative to PROJECT_ROOT.
-ALGORITHMS = [
-    {"name": "FFD", "script": "implement/FFD.py"},
-    {"name": "FFD_v2", "script": "implement/FFD_v2.py"},
-    {"name": "LPT", "script": "implement/LPT.py"},
-    {"name": "QGroup", "script": "implement/QGroup.py"},
-]
-
-# Batch settings
-SEED = 0
-QUEUE_POLICY = "strict"
-TIMEOUT = 600  # seconds per algorithm
-
-"""Sequential batch runner for quantum scheduling algorithms.
-
-Reads algorithm configurations from batch_config.py and runs each algorithm
-in a separate process, collecting results into a single timestamped CSV file.
-
-To add a new algorithm: edit batch_config.py and add it to the ALGORITHMS list.
-"""
+"""Sequential batch runner for quantum scheduling algorithms with process isolation."""
 
 import argparse
 import csv
 import json
-import subprocess
 import sys
-import tempfile
+from concurrent.futures import ProcessPoolExecutor, TimeoutError
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+RESULTS_DIR = PROJECT_ROOT / "results"
+
+# Module import map for in-memory execution with process isolation
+ALGORITHMS = [
+    {"name": "FFD", "module": "implement.FFD"},
+    {"name": "FFD_v2", "module": "implement.FFD_v2"},
+    {"name": "LPT", "module": "implement.LPT"},
+    {"name": "QGroup", "module": "implement.QGroup"},
+]
+
+TIMEOUT = 600  # seconds per algorithm
+
 
 def get_batch_timestamp() -> str:
-    """Return current time in Asia/Ho_Chi_Minh timezone with microseconds."""
-    # Using UTC and noting timezone in filename since pytz not in requirements
-    now = datetime.utcnow()
-    # Format: YYYYMMDD_HHMMSS_microseconds
-    return now.strftime("%Y%m%d_%H%M%S_%f")
+    """Return current UTC timestamp with microseconds."""
+    return datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
+
+
+def _worker_task(module_name: str, **kwargs) -> dict[str, Any]:
+    """Execute algorithm pipeline in a separate, isolated OS process."""
+    import importlib
+    mod = importlib.import_module(module_name)
+    return mod.run_algorithm(**kwargs)
 
 
 def create_csv_with_header(csv_path: Path) -> None:
@@ -52,14 +45,12 @@ def create_csv_with_header(csv_path: Path) -> None:
         "end_timestamp",
         "process_status",
         "error_message",
-        # ResultOfSchedule fields
         "num_circuits",
         "name_circuits",
         "average_qubits",
         "name_machines",
         "name_schedule",
         "schedule_latency",
-        # ExecutionSummary pure core fields
         "makespan",
         "average_turnaround_time",
         "average_waiting_time",
@@ -72,10 +63,8 @@ def create_csv_with_header(csv_path: Path) -> None:
         "cutting_policy",
         "optional_cutting",
         "optional_cutting_policy",
-        # Nested/list fields as JSON
         "machines_json",
         "batches_json",
-        # Fingerprints and metadata
         "workload_fingerprint",
         "machine_config",
         "seed",
@@ -88,73 +77,6 @@ def create_csv_with_header(csv_path: Path) -> None:
         writer.writeheader()
 
 
-def run_algorithm(
-    algorithm_name: str,
-    script_path: Path,
-    output_json: Path,
-    cutting_policy: str = "greedy",
-    optional_cutting: bool = False,
-    optional_cutting_policy: str = "half",
-    queue_policy: str = "strict",
-    seed: int = 0,
-    timeout: int = TIMEOUT,
-) -> tuple[str, str | None]:
-    """Run algorithm script in a separate process.
-
-    Returns:
-        (status, error_message) tuple where status is 'SUCCESS' or 'FAILED'
-    """
-
-    cmd = [
-        sys.executable,
-        str(script_path),
-        "--cutting-policy",
-        cutting_policy,
-        "--optional-cutting-policy",
-        optional_cutting_policy,
-        "--queue-policy",
-        queue_policy,
-        "--seed",
-        str(seed),
-        "--json-output",
-        str(output_json),
-    ]
-    if optional_cutting:
-        cmd.append("--optional-cutting")
-
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=PROJECT_ROOT,
-        )
-
-
-        if result.returncode == 0:
-            return ("SUCCESS", None)
-        else:
-            error_msg = f"Exit code {result.returncode}: {result.stderr[:500]}"
-            return ("FAILED", error_msg)
-
-    except subprocess.TimeoutExpired:
-        return ("FAILED", f"Process timeout ({timeout}s)")
-    except Exception as e:
-        return ("FAILED", f"Exception: {str(e)[:500]}")
-
-
-def load_result_json(json_path: Path) -> dict[str, Any] | None:
-    """Load result from JSON file, return None if file doesn't exist or is invalid."""
-    try:
-        if not json_path.exists():
-            return None
-        with open(json_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-
 def append_result_row(
     csv_path: Path,
     run_index: int,
@@ -165,7 +87,9 @@ def append_result_row(
     error_message: str | None,
     result_data: dict[str, Any] | None,
 ) -> None:
-    """Append one result row to the CSV file."""
+    """Append one result row to the CSV file using direct fallbacks (no nested if-else)."""
+    data = result_data or {}
+    exec_summary = data.get("execution_summary") or {}
 
     row = {
         "run_index": run_index,
@@ -174,66 +98,36 @@ def append_result_row(
         "end_timestamp": end_time,
         "process_status": status,
         "error_message": error_message or "",
+        "num_circuits": data.get("numCircuits", ""),
+        "name_circuits": data.get("nameCircuits", ""),
+        "average_qubits": data.get("averageQubits", ""),
+        "name_machines": json.dumps(data.get("nameMachines", "")) if "nameMachines" in data else "",
+        "name_schedule": data.get("nameSchedule", ""),
+        "schedule_latency": data.get("ScheduleLatency") or data.get("schedule_latency", ""),
+        "makespan": exec_summary.get("makespan", ""),
+        "average_turnaround_time": exec_summary.get("average_turnaround_time", ""),
+        "average_waiting_time": exec_summary.get("average_waiting_time", ""),
+        "average_fidelity": exec_summary.get("average_fidelity", ""),
+        "cluster_qubit_utilization": exec_summary.get("cluster_qubit_utilization", ""),
+        "total_cutting_overhead": exec_summary.get("total_cutting_overhead", ""),
+        "succeeded_jobs": exec_summary.get("succeeded_jobs", ""),
+        "failed_jobs": exec_summary.get("failed_jobs", ""),
+        "blocked_jobs": exec_summary.get("blocked_jobs", ""),
+        "cutting_policy": data.get("exceed_cutting_policy", ""),
+        "optional_cutting": data.get("optional_cutting", False),
+        "optional_cutting_policy": data.get("optional_cutting_policy", ""),
+        "machines_json": json.dumps(exec_summary.get("machines", "")) if exec_summary.get("machines") else "",
+        "batches_json": json.dumps(exec_summary.get("batches", "")) if exec_summary.get("batches") else "",
+        "workload_fingerprint": data.get("workload_fingerprint", ""),
+        "machine_config": data.get("machine_config", ""),
+        "seed": data.get("seed", "0"),
+        "queue_policy": data.get("queue_policy", "strict"),
+        "dependency_versions": json.dumps(data.get("dependency_versions", {})) if "dependency_versions" in data else "",
     }
 
-    # If we have result data, extract fields
-    if result_data:
-        row["num_circuits"] = result_data.get("numCircuits", "")
-        row["name_circuits"] = result_data.get("nameCircuits", "")
-        row["average_qubits"] = result_data.get("averageQubits", "")
-        row["name_machines"] = json.dumps(result_data.get("nameMachines", ""))
-        row["name_schedule"] = result_data.get("nameSchedule", "")
-        latency_val = result_data.get("ScheduleLatency")
-        if latency_val is None or latency_val == "":
-            latency_val = result_data.get("schedule_latency", "")
-        row["schedule_latency"] = latency_val
-
-        # ExecutionSummary pure core fields
-        exec_summary = result_data.get("execution_summary", {}) or {}
-        row["makespan"] = exec_summary.get("makespan", "")
-        row["average_turnaround_time"] = exec_summary.get("average_turnaround_time", "")
-        row["average_waiting_time"] = exec_summary.get("average_waiting_time", "")
-        row["average_fidelity"] = exec_summary.get("average_fidelity", "")
-        row["cluster_qubit_utilization"] = exec_summary.get("cluster_qubit_utilization", "")
-        row["total_cutting_overhead"] = exec_summary.get("total_cutting_overhead", "")
-        row["succeeded_jobs"] = exec_summary.get("succeeded_jobs", "")
-        row["failed_jobs"] = exec_summary.get("failed_jobs", "")
-        row["blocked_jobs"] = exec_summary.get("blocked_jobs", "")
-        row["cutting_policy"] = result_data.get("exceed_cutting_policy", "")
-        row["optional_cutting"] = result_data.get("optional_cutting", False)
-        row["optional_cutting_policy"] = result_data.get("optional_cutting_policy", "")
-
-        # Nested fields as JSON strings
-        machines = exec_summary.get("machines", {})
-        row["machines_json"] = json.dumps(machines) if machines else ""
-
-        batches = exec_summary.get("batches", [])
-        row["batches_json"] = json.dumps(batches) if batches else ""
-
-        # Metadata
-        row["workload_fingerprint"] = result_data.get("workload_fingerprint", "")
-        row["machine_config"] = result_data.get("machine_config", "")
-        row["seed"] = result_data.get("seed", "0")
-        row["queue_policy"] = result_data.get("queue_policy", "strict")
-        row["dependency_versions"] = json.dumps(result_data.get("dependency_versions", {}))
-    else:
-        # Fill with empty values for failed runs
-        for key in [
-            "num_circuits", "name_circuits", "average_qubits", "name_machines",
-            "name_schedule", "schedule_latency", "makespan", "average_turnaround_time",
-            "average_waiting_time", "average_fidelity", "cluster_qubit_utilization",
-            "total_cutting_overhead", "succeeded_jobs", "failed_jobs", "blocked_jobs",
-            "cutting_policy", "optional_cutting", "optional_cutting_policy",
-            "machines_json", "batches_json", "workload_fingerprint", "machine_config",
-            "seed", "queue_policy", "dependency_versions",
-        ]:
-            row[key] = ""
-
-    # Append to CSV
     with open(csv_path, "a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=row.keys())
         writer.writerow(row)
-        f.flush()
 
 
 def main() -> int:
@@ -247,9 +141,9 @@ def main() -> int:
     )
     parser.add_argument(
         "--optional-cutting",
-        action="store_true",
-        default=False,
-        help="Enable optional cutting for remaining eligible circuits (default: False)",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Override optional cutting for all algorithms (default: use each algorithm's native setup)",
     )
     parser.add_argument(
         "--optional-cutting-policy",
@@ -278,107 +172,66 @@ def main() -> int:
     args = parser.parse_args()
 
     enable_optional = args.optional_cutting
-    opt_summary = f"enabled ({args.optional_cutting_policy})" if enable_optional else "disabled (exceed only)"
-
-    # Load algorithms from configuration
-    if not ALGORITHMS:
-        print("Error: No algorithms configured in batch_config.py", file=sys.stderr)
-        return 1
+    if enable_optional is None:
+        opt_summary = "native (per-algorithm setup)"
+    else:
+        opt_summary = f"override: enabled ({args.optional_cutting_policy})" if enable_optional else "override: disabled"
 
     print(f"Configured algorithms: {', '.join(a['name'] for a in ALGORITHMS)}")
-    print(
-        f"Circuit cutting: Mandatory exceed={args.cutting_policy}, "
-        f"Optional={opt_summary}"
-    )
+    print(f"Circuit cutting: Mandatory exceed={args.cutting_policy}, Optional={opt_summary}")
 
     # Create timestamped CSV
-    timestamp = get_batch_timestamp()
-    csv_filename = f"{timestamp}.csv"
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    csv_path = RESULTS_DIR / csv_filename
-
-    # Check for collision (shouldn't happen with microseconds)
-    if csv_path.exists():
-        print(f"Error: CSV file already exists: {csv_path}", file=sys.stderr)
-        return 1
-
+    csv_path = RESULTS_DIR / f"{get_batch_timestamp()}.csv"
     print(f"Creating batch results file: {csv_path}")
     create_csv_with_header(csv_path)
 
-    run_index = 0
+    # Process Isolation: execute each algorithm in a dedicated worker process
+    with ProcessPoolExecutor(max_workers=1) as executor:
+        for run_index, algo in enumerate(ALGORITHMS, start=1):
+            algo_name = algo["name"]
+            opt_log = "native setup" if enable_optional is None else str(enable_optional)
+            print(f"\n[{run_index}/{len(ALGORITHMS)}] Running {algo_name} (policy={args.cutting_policy}, optional_cutting={opt_log}, queue={args.queue_policy}, seed={args.seed})...")
 
-    try:
-        for algo_config in ALGORITHMS:
-            algo_name = algo_config["name"]
-            script_path = PROJECT_ROOT / algo_config["script"]
-            run_index += 1
+            kwargs = {
+                "cutting_policy": args.cutting_policy,
+                "optional_cutting_policy": args.optional_cutting_policy,
+                "queue_policy": args.queue_policy,
+                "seed": args.seed,
+            }
+            if enable_optional is not None:
+                kwargs["optional_cutting"] = enable_optional
 
-            # Check if script exists
-            if not script_path.exists():
-                print(f"\n[{run_index}/{len(ALGORITHMS)}] Skipping {algo_name} - script not found: {script_path}")
-                start_time = datetime.utcnow().isoformat()
-                end_time = start_time
-                error = f"Script not found: {script_path}"
-                append_result_row(csv_path, run_index, algo_name, start_time, end_time, "FAILED", error, None)
-                continue
+            start_time = datetime.utcnow().isoformat()
+            future = executor.submit(_worker_task, algo["module"], **kwargs)
 
-            print(f"\n[{run_index}/{len(ALGORITHMS)}] Running {algo_name} (policy={args.cutting_policy}, optional_cutting={enable_optional}, queue={args.queue_policy}, seed={args.seed})...")
-
-            # Create temporary file for JSON output
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                suffix=".json",
-                delete=False,
-                prefix=f"{algo_name}_",
-            ) as tmp:
-                tmp_path = Path(tmp.name)
-
+            # DUY NHẤT 1 TẦNG BẢO VỆ NGOÀI CÙNG
             try:
-                start_time = datetime.utcnow().isoformat()
-                status, error = run_algorithm(
-                    algo_name,
-                    script_path,
-                    tmp_path,
-                    cutting_policy=args.cutting_policy,
-                    optional_cutting=enable_optional,
-                    optional_cutting_policy=args.optional_cutting_policy,
-                    queue_policy=args.queue_policy,
-                    seed=args.seed,
-                    timeout=args.timeout,
-                )
+                result_data = future.result(timeout=args.timeout)
+                status, error = "SUCCESS", None
+            except TimeoutError:
+                result_data = None
+                status, error = "FAILED", f"Process timeout ({args.timeout}s)"
+            except Exception as e:
+                result_data = None
+                status, error = "FAILED", f"Exception: {str(e)[:500]}"
 
-                end_time = datetime.utcnow().isoformat()
+            end_time = datetime.utcnow().isoformat()
+            print(f"  Status: {status}")
+            if error:
+                print(f"  Error: {error}")
 
-                print(f"  Status: {status}")
-                if error:
-                    print(f"  Error: {error}")
-
-                # Load result if successful
-                result_data = load_result_json(tmp_path) if status == "SUCCESS" else None
-
-                # Append to CSV
-                append_result_row(
-                    csv_path,
-                    run_index,
-                    algo_name,
-                    start_time,
-                    end_time,
-                    status,
-                    error,
-                    result_data,
-                )
-
-                print(f"  Result appended to CSV")
-
-            finally:
-                # Clean up temporary file
-                if tmp_path.exists():
-                    tmp_path.unlink()
-
-    except KeyboardInterrupt:
-        print("\n\nBatch interrupted by user", file=sys.stderr)
-        print(f"Partial results saved to: {csv_path}")
-        return 130
+            append_result_row(
+                csv_path,
+                run_index,
+                algo_name,
+                start_time,
+                end_time,
+                status,
+                error,
+                result_data if status == "SUCCESS" else None,
+            )
+            print("  Result appended to CSV")
 
     print(f"\nBatch complete. Results saved to: {csv_path}")
     return 0

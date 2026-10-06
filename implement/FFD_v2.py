@@ -23,29 +23,31 @@ from source.algorithm.heuristic.FFD_v2 import FFD_v2
 def run_algorithm(
     json_output: Path | None = None,
     cutting_policy: str = "greedy",
-    optional_cutting: bool = False,
+    optional_cutting: bool = True,
     optional_cutting_policy: str = "half",
     queue_policy: str = "strict",
     seed: int = 0,
 ):
     """Run the FFD_v2 scheduling algorithm and optionally save results to JSON.
 
-    Architecture & Cutting Workflow:
-        1. Mandatory Exceed Cutting (Feasibility):
-           Circuits whose qubits exceed max machine capacity (qubits > max_capacity)
-           are ALWAYS cut to ensure they can physically run.
-           Configured via `cutting_policy` ('greedy' or 'half').
-        2. Optional Cutting (Optimization):
-           When `optional_cutting=True`, remaining uncut circuits (qubits >= 2)
-           are also cut using `optional_cutting_policy` (default: 'half', extensible).
-        3. Dynamic Chopping:
-           FFD_v2 further chops circuits during scheduling if they cannot fit in remaining bin space.
+    Architecture & 2-Stage Cutting Workflow:
+        1. Mandatory Exceed Cutting (Feasibility - Ban đầu):
+           Circuits whose qubits exceed maximum machine capacity (qubits > max_capacity)
+           are ALWAYS cut to ensure physical machine compatibility.
+           Configured via `cutting_policy` (default: 'greedy').
+        2. Proactive Cutting (Slack Minimization - Xong / Sau đó):
+           All remaining uncut circuits (qubits >= 2) are proactively chopped using
+           `optional_cutting_policy` (default: 'half') to reduce idle QPU space (slack).
+           Active by default for FFD_v2 (`optional_cutting=True`).
+        3. Bin Packing & Re-ordering:
+           All resulting subcircuits are re-ordered largest-first and packed into machine bins
+           using First Fit Decreasing.
 
     Args:
         json_output: Optional path to save JSON results for batch execution.
-        cutting_policy: Mandatory cutting policy for oversized circuits ('greedy' or 'half').
-        optional_cutting: Whether to apply optional cutting to remaining circuits.
-        optional_cutting_policy: Strategy for optional cutting ('half', extensible).
+        cutting_policy: Mandatory cutting policy for oversized circuits ('greedy' or 'half', default: 'greedy').
+        optional_cutting: Whether to apply proactive half-cutting to remaining circuits (default: True).
+        optional_cutting_policy: Strategy for optional cutting ('half', default: 'half').
         queue_policy: Dispatch/backfilling policy ('strict', 'relaxed', 'backfill').
         seed: Random seed for transpiler and simulator reproducibility.
 
@@ -83,14 +85,13 @@ def run_algorithm(
     # 6. Print scheduling results to terminal
     print_schedule_result(capture_result_schedule, schedule_result)
 
-    # 7. Write JSON output if requested
+    # 7. Serialize and write JSON output if requested
+    result_data = serialize_result(capture_result_schedule)
     if json_output:
-        result_data = serialize_result(capture_result_schedule)
-        with open(json_output, "w", encoding="utf-8") as f:
-            json.dump(result_data, f, indent=2)
+        Path(json_output).write_text(json.dumps(result_data, indent=2), encoding="utf-8")
         print(f"\nJSON output written to: {json_output}")
 
-    return results
+    return result_data
 
 
 # Backward compatibility alias
@@ -113,9 +114,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--optional-cutting",
-        action="store_true",
-        default=False,
-        help="Enable optional cutting for remaining eligible circuits (default: False)",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable optional cutting for remaining eligible circuits (default: True for FFD_v2)",
     )
     parser.add_argument(
         "--optional-cutting-policy",
