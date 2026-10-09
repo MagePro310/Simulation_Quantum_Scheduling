@@ -1,8 +1,5 @@
 """Quantum simulator execution."""
 
-from collections.abc import Mapping
-from numbers import Integral
-
 from qiskit_aer import AerSimulator
 
 from source.component.dataclass.execution_info import BatchCounts, PreparedBatch

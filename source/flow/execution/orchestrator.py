@@ -4,21 +4,22 @@ import heapq
 import math
 from dataclasses import dataclass
 
-from source.component.dataclass.execution_info import (
-    BatchCompletion,
-    BatchCounts,
-    BatchExecutionRecord,
-)
+from source.component.dataclass.execution_info import BatchCompletion
 from source.component.dataclass.job_info import ExecutionResult, SchedulerJobInfo
 from source.component.dataclass.machine_characteristic import MachineCharacteristic
 from source.component.dataclass.result_schedule import ExecutionSummary
 
 from source.flow.execution.batch_executor import BatchExecutor
-from source.flow.execution.circuit_composer import CircuitPreparation
+from source.flow.execution.interfaces import (
+    DefaultLayoutStrategy,
+    JobDispatcherProtocol,
+    LayoutStrategy,
+    TimelineReporterProtocol,
+)
 from source.flow.execution.job_dispatcher import JobDispatcher
 from source.flow.execution.metrics_calculator import MetricsCalculator
-from source.flow.execution.quantum_simulator import QuantumExecutor
 from source.flow.execution.reconstruction_handler import ReconstructionHandler
+from source.flow.execution.timeline_reporter import ConsoleTimelineReporter
 
 
 @dataclass
@@ -34,18 +35,39 @@ class MachineState:
             self.active = []
 
 
-
-
 class ConcreteExecutionPhase:
-    """Quantum job execution orchestrator."""
+    """Quantum job execution orchestrator with Dependency Injection support."""
 
-    def __init__(self):
-        self.circuit_composer = CircuitPreparation()
-        self.quantum_runner = QuantumExecutor()
+    def __init__(
+        self,
+        dispatcher: JobDispatcherProtocol | None = None,
+        batch_executor: BatchExecutor | None = None,
+        layout_strategy: LayoutStrategy | None = None,
+        reconstruction_handler: ReconstructionHandler | None = None,
+        reporter: TimelineReporterProtocol | None = None,
+    ):
+        """Initialize the execution phase with pluggable strategies or standard defaults.
+
+        Args:
+            dispatcher: Custom job dispatching strategy (defaults to JobDispatcher).
+            batch_executor: Custom batch execution coordinator.
+            layout_strategy: Custom physical layout assignment strategy (defaults to Qiskit native).
+            reconstruction_handler: Custom circuit reconstruction handler.
+            reporter: Presentation logger (defaults to ConsoleTimelineReporter).
+        """
+        self.reporter = reporter or ConsoleTimelineReporter()
+        self.job_dispatcher = dispatcher or JobDispatcher()
+        self.layout_strategy = layout_strategy or DefaultLayoutStrategy()
+        self.batch_executor = batch_executor or BatchExecutor(
+            layout_strategy=self.layout_strategy,
+            reporter=self.reporter,
+        )
+        self.reconstruction_handler = reconstruction_handler or ReconstructionHandler()
+
+        # Expose sub-components for backward compatibility
+        self.circuit_composer = self.batch_executor.circuit_composer
+        self.quantum_runner = self.batch_executor.quantum_runner
         self.execution_summary = ExecutionSummary()
-        self.job_dispatcher = JobDispatcher()
-        self.batch_executor = BatchExecutor(self.circuit_composer, self.quantum_runner)
-        self.reconstruction_handler = ReconstructionHandler()
 
     def execute(
         self,
@@ -63,7 +85,7 @@ class ConcreteExecutionPhase:
         events = []  # Priority queue of (timestamp, batch_id, BatchCompletion)
 
         now = 0.0
-        print("\n=== Quantum Execution Started ===")
+        self.reporter.print_start()
 
         queue_policy = queue_policy.lower()
 
@@ -75,7 +97,7 @@ class ConcreteExecutionPhase:
             self.job_dispatcher.block_failed_dependents(scheduler_job, results)
 
             # 3. Print current timeline status
-            self._print_status(now, results, machine_states)
+            self.reporter.print_timeline_status(now, results, machine_states)
 
             # 4. Dispatch and execute new batches on idle machines
             failed = self._dispatch_and_execute(
@@ -158,8 +180,7 @@ class ConcreteExecutionPhase:
                     info = getattr(result, "job_info", None)
                     if info and getattr(info, "parentJob", None) is not None:
                         continue
-                    fid_str = f"{result.fidelity:.4f}" if isinstance(result.fidelity, (int, float)) else "subcircuit"
-                    print(f"│ Complete : {job_name:<15} (duration: {result.execution_time:.3f}s, fidelity: {fid_str})")
+                    self.reporter.print_completion(job_name, result.execution_time, result.fidelity)
 
     # ========== Initialization ==========
 
@@ -189,22 +210,7 @@ class ConcreteExecutionPhase:
             for name, job in scheduler_job.items()
         }
 
-    # ========== Timeline & Status ==========
-
-    def _print_status(self, now, results, machine_states) -> None:
-        """Print current execution timeline status card."""
-        if not any(r.status in {"PENDING", "RUNNING"} for r in results.values()):
-            return
-
-        print(f"\n┌─ Time: {now:.3f}s ─────────────────────────────────────")
-        if pending := [name for name, r in results.items() if r.status == "PENDING"]:
-            print(f"│ Queue    : {', '.join(pending)}")
-
-        for machine_name, state in machine_states.items():
-            if state.busy and state.active:
-                print(f"│ Running  : {machine_name:<15} → {', '.join(state.active)}")
-
-        print("└" + "─" * 50)
+    # ========== Timeline & Progress ==========
 
     def _next_event_time(self, now, events, scheduler_job, results, queue_policy) -> float:
         """Calculate next event time from completed batches or pending job arrivals."""
@@ -263,3 +269,6 @@ class ConcreteExecutionPhase:
         """Delegate reconstruction to ReconstructionHandler for backward compatibility."""
         return self.reconstruction_handler.reconstruct_parent_job(*args, **kwargs)
 
+    def _print_status(self, now, results, machine_states) -> None:
+        """Delegate timeline printing to reporter for backward compatibility."""
+        self.reporter.print_timeline_status(now, results, machine_states)

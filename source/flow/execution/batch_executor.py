@@ -1,5 +1,12 @@
-"""Batch executor: execute quantum batches using True Joint Execution or standard multi-programming."""
+"""Batch executor: execute quantum batches using True Joint Execution or standard multi-programming.
 
+Features:
+- Extensible layout strategy hook (defaults to Qiskit's native SabreLayout/VF2Layout).
+- Clean separation between subcircuit PubResult extraction and uncut circuit baseline fidelity calculation.
+- Clean presentation delegation via TimelineReporter.
+"""
+
+from typing import Any
 from qiskit.primitives.containers import DataBin, PrimitiveResult, PubResult
 from qiskit.transpiler import generate_preset_pass_manager
 from qiskit_aer import AerSimulator
@@ -13,6 +20,7 @@ from source.component.dataclass.execution_info import (
 from source.component.dataclass.job_info import ExecutionResult, SchedulerJobInfo
 from source.component.dataclass.machine_characteristic import MachineCharacteristic
 from source.flow.execution.circuit_composer import CircuitPreparation
+from source.flow.execution.interfaces import DefaultLayoutStrategy, LayoutStrategy
 from source.flow.execution.quantum_simulator import QuantumExecutor
 
 
@@ -23,9 +31,13 @@ class BatchExecutor:
         self,
         circuit_composer: CircuitPreparation | None = None,
         quantum_runner: QuantumExecutor | None = None,
+        layout_strategy: LayoutStrategy | None = None,
+        reporter: Any | None = None,
     ):
         self.circuit_composer = circuit_composer or CircuitPreparation()
         self.quantum_runner = quantum_runner or QuantumExecutor()
+        self.layout_strategy = layout_strategy or DefaultLayoutStrategy()
+        self.reporter = reporter
 
     def execute_batch(
         self,
@@ -53,7 +65,7 @@ class BatchExecutor:
             logical_qubits=sum(scheduler_job[name].job_information.circuit.num_qubits for name in active_jobs),
         )
 
-        # Apply shot limit
+        # Apply backend shot limit
         if max_shots := self.quantum_runner.max_shots(machine):
             batch_record.shots = min(batch_record.shots, max_shots)
 
@@ -70,6 +82,10 @@ class BatchExecutor:
         return self._execute_standard_batch(
             now, machine, active_jobs, scheduler_job, results, prepared_batch, batch_record, seed, batch_id
         )
+
+    # =========================================================================
+    # Branch A: True Joint Execution (with Subcircuits)
+    # =========================================================================
 
     def _execute_joint_cutting_batch(
         self,
@@ -88,18 +104,30 @@ class BatchExecutor:
                 results[name].start_time = now
             results[name].status = "RUNNING"
 
-        print(f"│ Dispatch : {machine.name:<15} → {', '.join(active_jobs)} ({batch_record.shots} shots, cut subcircuits)")
+        if self.reporter:
+            self.reporter.print_dispatch(machine.name, batch_record.job_ids, batch_record.shots, is_cut=True)
+        else:
+            print(f"│ Dispatch : {machine.name:<15} → {', '.join(active_jobs)} ({batch_record.shots} shots, cut subcircuits)")
 
         try:
-            pass_manager = generate_preset_pass_manager(
-                optimization_level=1, backend=machine.quantum_machine, seed_transpiler=seed
-            )
+            jobs_dict = {name: scheduler_job[name].job_information for name in active_jobs}
+
+            # Layout strategy hook: None means Qiskit Pass Manager runs native heuristic
+            initial_layout = self.layout_strategy.get_initial_layout(machine.quantum_machine, jobs_dict)
+            pm_kwargs = {
+                "optimization_level": 1,
+                "backend": machine.quantum_machine,
+                "seed_transpiler": seed,
+            }
+            if initial_layout is not None:
+                pm_kwargs["initial_layout"] = initial_layout
+
+            pass_manager = generate_preset_pass_manager(**pm_kwargs)
             sampler = SamplerV2(mode=machine.quantum_machine)
 
-            jobs_dict = {name: scheduler_job[name].job_information for name in active_jobs}
             joint_circuits, reg_meta = self.circuit_composer.compose_joint_cutting_batch(jobs_dict)
-
             isa_composed = pass_manager.run(joint_circuits)
+
             total_duration = sum(
                 float(c.estimate_duration(machine.quantum_machine.target, unit="s"))
                 for c in isa_composed
@@ -107,58 +135,72 @@ class BatchExecutor:
 
             raw_res = sampler.run(isa_composed, shots=batch_record.shots).result()
 
+            # Demultiplex results for each active job
             job_counts = {}
             for name in active_jobs:
                 meta = reg_meta[name]
                 info = scheduler_job[name].job_information
 
                 if meta["type"] == "subcircuit":
-                    sub_len = meta["len"]
-                    pubs = []
-                    for p in raw_res[:sub_len]:
-                        obs_data = getattr(p.data, meta["obs"])
-                        qpd_name = meta["qpd"]
-                        if qpd_name and hasattr(p.data, qpd_name):
-                            qpd_data = getattr(p.data, qpd_name)
-                            db = DataBin(observable_measurements=obs_data, qpd_measurements=qpd_data)
-                        else:
-                            db = DataBin(observable_measurements=obs_data)
-                        pubs.append(PubResult(db))
-
-                    sub_res = PrimitiveResult(pubs)
-                    if info.parentJob and getattr(info.parentJob, "cutting_context", None):
-                        info.parentJob.cutting_context.sub_results[info.partition_label] = sub_res
-
-                    obs_meas = getattr(getattr(sub_res[0], "data", None), "observable_measurements", None)
-                    first_counts = dict(obs_meas.get_counts()) if obs_meas else {}
-
-                    job_counts[name] = BatchCounts(
-                        distribution_no_noise=first_counts,
-                        distribution_with_noise=first_counts,
-                    )
+                    job_counts[name] = self._extract_subcircuit_results(raw_res, meta, info)
                 else:
-                    # Uncut circuit: extract noisy counts from joint topology execution
-                    meas_name = meta["meas"]
-                    raw_pub = raw_res[0]
-                    counts_with_noise = dict(getattr(raw_pub.data, meas_name).get_counts())
-
-                    # Ideal noiseless simulation for baseline fidelity
-                    qc_ideal = info.circuit.copy()
-                    if qc_ideal.num_clbits == 0:
-                        qc_ideal.measure_all()
-                    ideal_res = AerSimulator().run(qc_ideal, shots=batch_record.shots, seed_simulator=seed).result()
-                    counts_no_noise = dict(ideal_res.get_counts())
-
-                    job_counts[name] = BatchCounts(
-                        distribution_no_noise=counts_no_noise,
-                        distribution_with_noise=counts_with_noise,
-                    )
+                    job_counts[name] = self._extract_uncut_results(raw_res, meta, info, batch_record.shots, seed)
 
             batch_record.end_time = now + max(total_duration, 0.0001)
             return batch_record, job_counts, None, None
 
         except Exception as e:
             return batch_record, None, f"Batch {batch_id} execution failed: {e}", None
+
+    @staticmethod
+    def _extract_subcircuit_results(raw_res, meta: dict[str, Any], info: Any) -> BatchCounts:
+        """Extract measurement results and wrap DataBin / PubResult for cut subcircuits."""
+        sub_len = meta["len"]
+        pubs = []
+        for p in raw_res[:sub_len]:
+            obs_data = getattr(p.data, meta["obs"])
+            qpd_name = meta["qpd"]
+            if qpd_name and hasattr(p.data, qpd_name):
+                qpd_data = getattr(p.data, qpd_name)
+                db = DataBin(observable_measurements=obs_data, qpd_measurements=qpd_data)
+            else:
+                db = DataBin(observable_measurements=obs_data)
+            pubs.append(PubResult(db))
+
+        sub_res = PrimitiveResult(pubs)
+        if info.parentJob and getattr(info.parentJob, "cutting_context", None):
+            info.parentJob.cutting_context.sub_results[info.partition_label] = sub_res
+
+        obs_meas = getattr(getattr(sub_res[0], "data", None), "observable_measurements", None)
+        first_counts = dict(obs_meas.get_counts()) if obs_meas else {}
+
+        return BatchCounts(
+            distribution_no_noise=first_counts,
+            distribution_with_noise=first_counts,
+        )
+
+    @staticmethod
+    def _extract_uncut_results(raw_res, meta: dict[str, Any], info: Any, shots: int, seed: int) -> BatchCounts:
+        """Extract noisy counts and compute ideal baseline for regular uncut circuits."""
+        meas_name = meta["meas"]
+        raw_pub = raw_res[0]
+        counts_with_noise = dict(getattr(raw_pub.data, meas_name).get_counts())
+
+        # Ideal noiseless simulation for baseline fidelity
+        qc_ideal = info.circuit.copy()
+        if qc_ideal.num_clbits == 0:
+            qc_ideal.measure_all()
+        ideal_res = AerSimulator().run(qc_ideal, shots=shots, seed_simulator=seed).result()
+        counts_no_noise = dict(ideal_res.get_counts())
+
+        return BatchCounts(
+            distribution_no_noise=counts_no_noise,
+            distribution_with_noise=counts_with_noise,
+        )
+
+    # =========================================================================
+    # Branch B: Standard Multi-Programming Composite Batch
+    # =========================================================================
 
     def _execute_standard_batch(
         self,
@@ -187,7 +229,10 @@ class BatchExecutor:
                 results[name].start_time = now
             results[name].status = "RUNNING"
 
-        print(f"│ Dispatch : {machine.name:<15} → {', '.join(active_jobs)} ({batch_record.shots} shots)")
+        if self.reporter:
+            self.reporter.print_dispatch(machine.name, batch_record.job_ids, batch_record.shots, is_cut=False)
+        else:
+            print(f"│ Dispatch : {machine.name:<15} → {', '.join(active_jobs)} ({batch_record.shots} shots)")
 
         try:
             merged_counts = self.quantum_runner.execute_batch(
@@ -225,4 +270,3 @@ class BatchExecutor:
             )
 
         return job_counts
-
