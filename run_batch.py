@@ -17,6 +17,7 @@ RESULTS_DIR = PROJECT_ROOT / "results"
 ALGORITHMS = [
     {"name": "FFD", "module": "implement.FFD"},
     {"name": "FFD_v2", "module": "implement.FFD_v2"},
+    {"name": "Adaptive_FFD", "module": "implement.Adaptive_FFD"},
     {"name": "LPT", "module": "implement.LPT"},
     {"name": "QGroup", "module": "implement.QGroup"},
 ]
@@ -140,18 +141,6 @@ def main() -> int:
         help="Mandatory cut policy for circuits exceeding machine capacity: 'greedy' or 'half' (default: 'greedy')",
     )
     parser.add_argument(
-        "--optional-cutting",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Override optional cutting for all algorithms (default: use each algorithm's native setup)",
-    )
-    parser.add_argument(
-        "--optional-cutting-policy",
-        choices=["half"],
-        default="half",
-        help="Policy for optional cutting stage: 'half' (default: 'half', extensible)",
-    )
-    parser.add_argument(
         "--queue-policy",
         choices=["strict", "relaxed", "backfill"],
         default="strict",
@@ -171,14 +160,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    enable_optional = args.optional_cutting
-    if enable_optional is None:
-        opt_summary = "native (per-algorithm setup)"
-    else:
-        opt_summary = f"override: enabled ({args.optional_cutting_policy})" if enable_optional else "override: disabled"
-
     print(f"Configured algorithms: {', '.join(a['name'] for a in ALGORITHMS)}")
-    print(f"Circuit cutting: Mandatory exceed={args.cutting_policy}, Optional={opt_summary}")
+    print(f"Circuit cutting: Mandatory exceed={args.cutting_policy}")
 
     # Create timestamped CSV
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -190,17 +173,13 @@ def main() -> int:
     with ProcessPoolExecutor(max_workers=1) as executor:
         for run_index, algo in enumerate(ALGORITHMS, start=1):
             algo_name = algo["name"]
-            opt_log = "native setup" if enable_optional is None else str(enable_optional)
-            print(f"\n[{run_index}/{len(ALGORITHMS)}] Running {algo_name} (policy={args.cutting_policy}, optional_cutting={opt_log}, queue={args.queue_policy}, seed={args.seed})...")
+            print(f"\n[{run_index}/{len(ALGORITHMS)}] Running {algo_name} (policy={args.cutting_policy}, queue={args.queue_policy}, seed={args.seed})...")
 
             kwargs = {
                 "cutting_policy": args.cutting_policy,
-                "optional_cutting_policy": args.optional_cutting_policy,
                 "queue_policy": args.queue_policy,
                 "seed": args.seed,
             }
-            if enable_optional is not None:
-                kwargs["optional_cutting"] = enable_optional
 
             start_time = datetime.utcnow().isoformat()
             future = executor.submit(_worker_task, algo["module"], **kwargs)

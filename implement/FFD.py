@@ -22,27 +22,23 @@ from source.algorithm.heuristic.FFD import FFD
 def run_algorithm(
     json_output: Path | None = None,
     cutting_policy: str = "greedy",
-    optional_cutting: bool = False,
-    optional_cutting_policy: str = "half",
     queue_policy: str = "strict",
     seed: int = 0,
+    **kwargs,
 ):
     """Run the FFD scheduling algorithm and optionally save results to JSON.
 
     Architecture & Cutting Workflow:
-        1. Mandatory Exceed Cutting (Feasibility):
+        1. Mandatory Exceed Cutting (PreSchedulePhase):
            Circuits whose qubits exceed max machine capacity (qubits > max_capacity)
-           are ALWAYS cut to ensure they can physically run.
-           Configured via `cutting_policy` ('greedy' or 'half').
-        2. Optional Cutting (Optimization):
-           When `optional_cutting=True`, remaining uncut circuits (qubits >= 2)
-           are also cut using `optional_cutting_policy` (default: 'half', extensible).
+           are cut to guarantee physical hardware feasibility.
+           Configured via `cutting_policy` ('greedy' or 'half', default: 'greedy').
+        2. First Fit Decreasing Bin Packing (FFD):
+           All circuits are packed into machine bins using First Fit Decreasing.
 
     Args:
         json_output: Optional path to save JSON results for batch execution.
         cutting_policy: Mandatory cutting policy for oversized circuits ('greedy' or 'half').
-        optional_cutting: Whether to apply optional cutting to remaining circuits.
-        optional_cutting_policy: Strategy for optional cutting ('half', extensible).
         queue_policy: Dispatch / backfilling policy ('strict' vs 'backfill').
         seed: Random seed for transpiler and simulator reproducibility.
 
@@ -60,12 +56,9 @@ def run_algorithm(
 
     # 4. Schedule Phase:
     #    - Mandatory exceed cut: always active for oversized circuits
-    #    - Optional cut: active if optional_cutting=True
     schedule_result = ConcreteSchedulePhase(
         algorithm=algorithm,
         exceed_cutting_policy=cutting_policy,
-        enable_optional_cutting=optional_cutting,
-        optional_cutting_policy=optional_cutting_policy,
     ).execute(input_job, machines_set, capture_result_schedule)
 
     # 5. Execution Phase (simulation / backend execution & reconstruction)
@@ -108,19 +101,6 @@ if __name__ == "__main__":
         help="Mandatory cut policy for circuits exceeding machine capacity: 'greedy' or 'half' (default: 'greedy')",
     )
     parser.add_argument(
-        "--optional-cutting",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Enable optional cutting for remaining eligible circuits (default: False)",
-    )
-    parser.add_argument(
-        "--optional-cutting-policy",
-        type=str,
-        choices=["half"],
-        default="half",
-        help="Policy for optional cutting stage: 'half' (default: 'half', extensible)",
-    )
-    parser.add_argument(
         "--queue-policy",
         type=str,
         choices=["strict", "backfill"],
@@ -138,8 +118,6 @@ if __name__ == "__main__":
     run_algorithm(
         json_output=args.json_output,
         cutting_policy=args.cutting_policy,
-        optional_cutting=args.optional_cutting,
-        optional_cutting_policy=args.optional_cutting_policy,
         queue_policy=args.queue_policy,
         seed=args.seed,
     )

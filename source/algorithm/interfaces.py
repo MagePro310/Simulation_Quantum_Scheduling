@@ -12,14 +12,10 @@ from source.component.dataclass.machine_characteristic import MachineCharacteris
 class ScheduleAlgorithmProtocol(Protocol):
     """Giao diện chuẩn hóa cho mọi thuật toán lập lịch lượng tử.
 
-    Mọi thuật toán (FFD, FFD_v2, LPT, QGroup...) đều chuẩn hóa:
-    - enable_optional_cutting (bool): Có bật cắt mạch tùy chọn (Stage 2) hay không.
-    - optional_cutting_policy (str): Chính sách cắt tùy chọn (mặc định 'half').
-    - execute(): Phương thức điều phối và gán máy.
+    Mọi thuật toán (FFD, FFD_v2, LPT, QGroup...) đều chuẩn hóa phương thức execute().
+    Nếu thuật toán có nhu cầu cắt mạch, có thể trực tiếp sử dụng thư viện
+    `from source.algorithm import SchedulingCutterHelper`.
     """
-
-    enable_optional_cutting: bool
-    optional_cutting_policy: str
 
     def execute(
         self,

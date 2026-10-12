@@ -37,16 +37,8 @@ class LPT:
     Inputs are assumed to be valid, with every job fitting at least one machine.
     """
 
-    enable_optional_cutting: bool = False
-    optional_cutting_policy: str = "half"
-
-    def __init__(
-        self,
-        enable_optional_cutting: bool = False,
-        optional_cutting_policy: str = "half",
-    ):
-        self.enable_optional_cutting = enable_optional_cutting
-        self.optional_cutting_policy = optional_cutting_policy
+    def __init__(self, **kwargs):
+        pass
 
     def execute(
         self,

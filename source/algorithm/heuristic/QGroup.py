@@ -509,9 +509,6 @@ class QGroupBin:
 class QGroup:
     """QGroup scheduling algorithm integrated with the quantum scheduling framework."""
 
-    enable_optional_cutting: bool = False
-    optional_cutting_policy: str = "half"
-
     def __init__(
         self,
         alpha: float = 0.25,
@@ -521,12 +518,9 @@ class QGroup:
         overhead: float = 1.8,
         fidelity_weight: float = 1.0,
         time_limit: float | None = 30.0,
-        enable_optional_cutting: bool = False,
-        optional_cutting_policy: str = "half",
+        **kwargs,
     ):
         """Initialize QGroup with configurable parameters."""
-        self.enable_optional_cutting = enable_optional_cutting
-        self.optional_cutting_policy = optional_cutting_policy
         self.params = QGroupParameters(
             alpha=alpha,
             delta=delta,
