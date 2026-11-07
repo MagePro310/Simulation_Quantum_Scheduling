@@ -1,7 +1,7 @@
 """Metrics calculator: calculate execution metrics and summaries."""
 
-from source.component.dataclass.result_schedule import ExecutionSummary, MachineExecutionResult
-from source.component.dataclass.job_info import ExecutionResult
+from source.models.schedule_result import ExecutionSummary, MachineExecutionResult
+from source.models.job import ExecutionResult
 
 
 class MetricsCalculator:
@@ -20,7 +20,7 @@ class MetricsCalculator:
         # Count job statuses (filter out internal cut subcircuits, keep actual user jobs)
         target_results = {
             k: r for k, r in results.items()
-            if getattr(r.job_info, "parentJob", None) is None
+            if getattr(r.job_info, "parent_job", None) is None
         }
 
         summary.succeeded_jobs = sum(1 for r in target_results.values() if r.status == "SUCCEEDED")

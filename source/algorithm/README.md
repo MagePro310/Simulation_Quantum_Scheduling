@@ -1,100 +1,78 @@
-# Hướng dẫn Phát triển Thuật toán Lập lịch (Algorithm Developer Guide)
+# Algorithm Developer Guide
 
-Thư mục [`source/algorithm/`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/) chứa toàn bộ các giải thuật lập lịch cho hệ thống mô phỏng lượng tử.
-
----
-
-## 1. Cấu trúc Thư mục
-
-- [`interfaces.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/interfaces.py): Định nghĩa giao diện chuẩn [`ScheduleAlgorithmProtocol`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/interfaces.py#L11).
-- `heuristic/`: Chứa các thuật toán triển khai sẵn:
-  - [`FFD.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/heuristic/FFD.py): First Fit Decreasing cổ điển (xếp theo số qubit giảm dần).
-  - [`FFD_v2.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/heuristic/FFD_v2.py): First Fit Decreasing tích hợp thư viện Circuit Cutting Helper (Pre-sort cutting: cắt tất cả trước khi xếp).
-  - [`Adaptive_FFD.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/heuristic/Adaptive_FFD.py) (hoặc `FFD_v3`): First Fit Decreasing thích ứng (On-the-fly slack cutting: chỉ cắt khi có khoảng trống bin để bảo toàn tối đa fidelity).
-  - [`LPT.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/heuristic/LPT.py): Longest Processing Time (xếp mạch có thời gian ước tính dài nhất trước).
-  - [`QGroup.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/heuristic/QGroup.py): Thuật toán tối ưu song song (IEEE QCE 2024) dựa trên phân nhóm và quy hoạch tuyến tính nguyên hỗn hợp (MILP).
+The [`source/algorithm/`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/) directory hosts scheduling algorithms for the quantum simulation platform.
 
 ---
 
-## 2. Hướng dẫn Viết một Thuật toán Lập lịch Mới
+## 1. Directory Overview
 
-Mọi thuật toán mới **chỉ cần viết một class thông thường có hàm `execute(self, scheduler_job, machines)`** là hệ thống tự động nhận diện, không cần kế thừa phức tạp:
+- [`interfaces.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/interfaces.py): `ScheduleAlgorithmProtocol` defining the `execute(scheduler_job, machines)` interface (PEP 544).
+- [`registry.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/registry.py): Central registry with `@register_algorithm`, `get_algorithm(name)`, and `list_algorithms()`.
+- [`common.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/common.py): Helper functions for sorting and cluster capacity analysis.
+- `heuristic/`: Built-in implementations:
+  - [`ffd.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/heuristic/ffd.py): First Fit Decreasing.
+  - [`ffd_v2.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/heuristic/ffd_v2.py): FFD with pre-sort circuit cutting.
+  - [`adaptive_ffd.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/heuristic/adaptive_ffd.py): Adaptive FFD (on-the-fly slack cutting).
+  - [`lpt.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/heuristic/lpt.py): Longest Processing Time first.
+  - [`qgroup.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/heuristic/qgroup.py): QGroup (Clustering + MILP, IEEE QCE 2024).
+
+---
+
+## 2. Adding a New Algorithm in 3 Steps
+
+### Step 1: Implement the Class with `@register_algorithm`
+
+Create `source/algorithm/heuristic/my_algo.py`:
 
 ```python
-from source.component.dataclass.job_info import SchedulerJobInfo
-from source.component.dataclass.machine_characteristic import MachineCharacteristic
+from source.algorithm.registry import register_algorithm
+from source.models.job import SchedulerJobInfo
+from source.models.machine import MachineCharacteristic
 
-class MySimpleAlgorithm:
-    """Thuật toán của bạn: chỉ cần có đúng hàm execute() nhận 2 tham số."""
-
+@register_algorithm("MyAlgo")
+class MyAlgo:
     def execute(
         self,
         scheduler_job: dict[str, SchedulerJobInfo],
         machines: dict[str, MachineCharacteristic],
     ) -> dict[str, SchedulerJobInfo]:
         machine_names = list(machines.keys())
-        dispatch_counters = {m: 0 for m in machine_names}
-
-        # Duyệt và gán máy + thứ tự dispatch cho từng job
-        for idx, (job_name, job) in enumerate(scheduler_job.items()):
-            assigned_machine = machine_names[idx % len(machine_names)]
-            job.assigned_machine = assigned_machine
-            job.dispatch_order = dispatch_counters[assigned_machine]
-            dispatch_counters[assigned_machine] += 1
-
+        for idx, job in enumerate(scheduler_job.values()):
+            job.assigned_machine = machine_names[idx % len(machine_names)]
+            job.dispatch_order = idx
         return scheduler_job
 ```
 
----
-
-## 3. Sử dụng Thư Viện Hỗ Trợ Circuit Cutting Trong Giải Thuật
-
-Hệ thống cung cấp sẵn thư viện công cụ cắt mạch [`SchedulingCutterHelper`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/flow/schedule/cutting/schedule_cutter_helper.py). Giải thuật có thể import trực tiếp và gọi cắt on-demand:
+### Step 2: Export in `source/algorithm/heuristic/__init__.py`
 
 ```python
-from source.algorithm import SchedulingCutterHelper
+from source.algorithm.heuristic.my_algo import MyAlgo
+
+__all__ = [..., "MyAlgo"]
 ```
 
-### Các hàm công cụ chính:
+### Step 3: Run Immediately
 
-1. **Cắt hàng loạt các mạch trước khi xếp lịch**:
-   ```python
-   # Cắt các mạch gốc với target_qubits (mặc định chia đôi cân bằng)
-   max_capacity = SchedulingCutterHelper.get_max_capacity(machines)
-   jobs_to_schedule = SchedulingCutterHelper.cut_jobs(scheduler_job, target_qubits=max_capacity)
-   ```
-
-2. **Ước lượng overhead trước khi cắt**:
-   ```python
-   # Ước lượng chi phí sampling QPD trước khi cắt để ra quyết định
-   overhead = SchedulingCutterHelper.estimate_overhead(s_job, cluster_sizes=[2, 2])
-   if overhead <= 81.0:
-       # Chấp nhận cắt nếu overhead trong ngưỡng
-       sub_jobs = SchedulingCutterHelper.cut_job(s_job, cluster_sizes=[2, 2])
-   ```
-
-3. **Cắt động 1 job đơn lẻ theo khoảng trống còn lại của bin (On-the-fly cutting)**:
-   ```python
-   # Kiểm tra điều kiện cắt trước khi cắt
-   if SchedulingCutterHelper.can_cut(s_job):
-       # Truyền số qubit mong muốn của từng cụm (ví dụ [slack, remainder])
-       sub_jobs = SchedulingCutterHelper.cut_job(s_job, cluster_sizes=[slack, remainder])
-   ```
-
-> [!NOTE]
-> Thư viện `SchedulingCutterHelper` tự động bảo toàn toàn bộ ràng buộc: liên kết `parentJob` - `childrenJobs`, tính `cutting_overhead`, sinh `subexperiments`, sao chép `depends_on`, `shots`, `arrival_time`, `priority`.
+- **Single CLI Run**:
+  ```bash
+  python run_simulation.py -a MyAlgo
+  ```
+- **Batch Benchmark**:
+  Add `"MyAlgo"` to the `ALGORITHMS` list in [`run_batch.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/run_batch.py).
 
 ---
 
-## 4. Cách Sử dụng Thuật toán Mới
+## 3. Circuit Cutting Helper
 
-1. **Chạy độc lập (Standalone)**:
-   Xem template tại [`implement/algorithm_template.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/implement/algorithm_template.py):
-   ```python
-   from source.flow.schedule.phase_schedule import ConcreteSchedulePhase
+Use [`SchedulingCutterHelper`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/flow/schedule/cutting/schedule_cutter_helper.py) within your algorithm for on-demand circuit partitioning:
 
-   schedule_result = ConcreteSchedulePhase(algorithm=MySimpleAlgorithm()).execute(...)
-   ```
+```python
+from source.flow.schedule.cutting.schedule_cutter_helper import SchedulingCutterHelper
 
-2. **Chạy thử nghiệm so sánh hàng loạt (Batch Runner)**:
-   Thêm thuật toán vào danh sách `ALGORITHMS` trong [`run_batch.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/run_batch.py) để tự động thu thập kết quả và vẽ biểu đồ so sánh.
+# Batch cut oversized jobs
+cut_jobs = SchedulingCutterHelper.cut_jobs(scheduler_job, target_qubits=max_capacity)
+
+# Cut single job to fit bin slack
+if SchedulingCutterHelper.can_cut(job):
+    sub_jobs = SchedulingCutterHelper.cut_job(job, cluster_sizes=[slack, remainder])
+```

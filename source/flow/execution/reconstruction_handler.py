@@ -2,9 +2,9 @@
 
 from collections import Counter
 
-from source.component.dataclass.execution_info import BatchCompletion
-from source.component.dataclass.job_info import ExecutionResult, JobInfo
-from source.component.help_function.fidelity import (
+from source.models.execution import BatchCompletion
+from source.models.job import ExecutionResult, JobInfo
+from source.utils.fidelity import (
     compute_hellinger_fidelity,
     compute_total_variation_distance,
 )
@@ -61,12 +61,12 @@ class ReconstructionHandler:
 
                 # If this is a cut subcircuit, check if all subcircuits have finished
                 info = getattr(result, "job_info", None)
-                if info and getattr(info, "parentJob", None) and getattr(info.parentJob, "cutting_context", None):
-                    parent_job = info.parentJob
+                parent_job = getattr(info, "parent_job", None)
+                if info and parent_job and getattr(parent_job, "cutting_context", None):
                     ctx = parent_job.cutting_context
                     child_results = [
                         r for r in results.values()
-                        if r.job_info and getattr(r.job_info, "parentJob", None) is parent_job
+                        if r.job_info and getattr(r.job_info, "parent_job", None) is parent_job
                     ]
                     all_done = (
                         len(child_results) == len(ctx.subcircuits)
@@ -97,7 +97,7 @@ class ReconstructionHandler:
             # Store in parent execution result
             child_results = [
                 r for r in results.values()
-                if r.job_info and getattr(r.job_info, "parentJob", None) is parent_job
+                if r.job_info and getattr(r.job_info, "parent_job", None) is parent_job
             ]
             p_start = min((r.start_time for r in child_results if r.start_time is not None), default=0.0)
             p_end = max((r.end_time for r in child_results if r.end_time is not None), default=0.0)

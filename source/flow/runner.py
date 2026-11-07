@@ -5,23 +5,18 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-import sys
 from typing import Any, Callable
 
-# Ensure project root is available in sys.path
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-from source.component.dataclass.result_schedule import ResultOfSchedule
-from source.component.dataclass.simulation_config import SimulationConfig
-from source.component.help_function.result_serialization import (
+from source.algorithm.registry import get_algorithm
+from source.flow.execution.orchestrator import ExecutionPhase
+from source.flow.input.input_phase import InputPhase
+from source.flow.schedule.schedule_phase import SchedulePhase
+from source.models.schedule_result import ResultOfSchedule
+from source.models.simulation_config import SimulationConfig
+from source.utils.serialization import (
     print_schedule_result,
     serialize_result,
 )
-from source.flow.execution.orchestrator import ConcreteExecutionPhase
-from source.flow.input.phase_input import ConcreteInputPhase
-from source.flow.schedule.phase_schedule import ConcreteSchedulePhase
 
 
 def run_pipeline(
@@ -30,14 +25,14 @@ def run_pipeline(
     json_output: Path | str | None = None,
     gantt_output_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Execute complete quantum scheduling pipeline for an algorithm instance.
+    """Execute complete quantum scheduling pipeline for an algorithm instance or registered name.
 
     Uses SimulationConfig as the strict Single Source of Truth (SSOT).
     All simulation parameters (cutting policy, queue policy, seed, workload, machines)
     are derived exclusively from the configuration.
 
     Args:
-        algorithm: Scheduling algorithm instance (must implement execute()).
+        algorithm: Scheduling algorithm instance or registered name string (e.g. 'FFD').
         config: SimulationConfig instance, dict, or path to YAML/JSON config file.
         json_output: Optional path to save structured JSON results.
         gantt_output_path: Optional custom path to save Gantt chart PNG.
@@ -45,6 +40,13 @@ def run_pipeline(
     Returns:
         Dictionary containing serialized scheduling and execution results.
     """
+    if isinstance(algorithm, str):
+        algo_instance = get_algorithm(algorithm)
+    elif isinstance(algorithm, type):
+        algo_instance = algorithm()
+    else:
+        algo_instance = algorithm
+
     # 1. Resolve configuration (Single Source of Truth)
     resolved_config = SimulationConfig.resolve(config)
 
@@ -56,18 +58,18 @@ def run_pipeline(
     capture_result_schedule = ResultOfSchedule()
 
     # 3. Create input circuits and quantum machines driven strictly by config
-    input_job, machines_set = ConcreteInputPhase(config=resolved_config).create_input(capture_result_schedule)
+    input_job, machines_set = InputPhase(config=resolved_config).create_input(capture_result_schedule)
 
     # 4. Schedule Phase:
     #    - Mandatory exceed cut: active for oversized circuits
-    schedule_result = ConcreteSchedulePhase(
-        algorithm=algorithm,
+    schedule_result = SchedulePhase(
+        algorithm=algo_instance,
         exceed_cutting_policy=cutting_policy,
     ).execute(input_job, machines_set, capture_result_schedule)
 
     # 5. Execution Phase:
     #    - Discrete-event simulation, batch execution, and circuit reconstruction
-    results = ConcreteExecutionPhase().execute(
+    ExecutionPhase().execute(
         machines_set,
         schedule_result,
         queue_policy=queue_policy,
@@ -89,14 +91,10 @@ def run_pipeline(
 
 
 def run_cli(
-    algorithm_factory: Callable[[], Any],
+    algorithm_factory: Callable[[], Any] | str,
     description: str = "Quantum scheduling algorithm",
 ) -> None:
-    """Standardized CLI entry point for standalone algorithm scripts.
-
-    Reads configuration from configs/default_batch.yaml by default or from
-    the specified --config file, avoiding duplicated parameter flags.
-    """
+    """Standardized CLI entry point for algorithm simulations."""
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument(
         "--config",
@@ -116,8 +114,9 @@ def run_cli(
     )
     args = parser.parse_args()
 
+    algo = algorithm_factory() if callable(algorithm_factory) else algorithm_factory
     run_pipeline(
-        algorithm=algorithm_factory(),
+        algorithm=algo,
         config=args.config,
         json_output=args.json_output,
         gantt_output_path=args.gantt_output,

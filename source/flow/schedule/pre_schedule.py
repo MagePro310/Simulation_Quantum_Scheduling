@@ -8,7 +8,7 @@ from typing import Any, Dict
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
+from source.models.job import JobInfo, SchedulerJobInfo
 from source.flow.schedule.cutting.schedule_cutter_helper import SchedulingCutterHelper
 
 

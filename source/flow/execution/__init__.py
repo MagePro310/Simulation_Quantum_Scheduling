@@ -1,6 +1,6 @@
-"""Execution module - SOLID principles design.
+"""Execution module for quantum circuit simulation (Phase 3).
 
-Main entry point: ConcreteExecutionPhase
+Main entry point: ExecutionPhase
 """
 
 from source.flow.execution.batch_executor import BatchExecutor
@@ -14,7 +14,7 @@ from source.flow.execution.interfaces import (
 )
 from source.flow.execution.job_dispatcher import JobDispatcher
 from source.flow.execution.metrics_calculator import MetricsCalculator
-from source.flow.execution.orchestrator import ConcreteExecutionPhase
+from source.flow.execution.orchestrator import ExecutionPhase
 from source.flow.execution.quantum_simulator import QuantumExecutor
 from source.flow.execution.reconstruction_handler import ReconstructionHandler
 from source.flow.execution.timeline_reporter import (
@@ -23,7 +23,7 @@ from source.flow.execution.timeline_reporter import (
 )
 
 __all__ = [
-    "ConcreteExecutionPhase",
+    "ExecutionPhase",
     "CircuitPreparation",
     "QuantumExecutor",
     "CircuitReconstructor",

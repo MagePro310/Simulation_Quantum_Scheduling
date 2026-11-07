@@ -10,7 +10,7 @@ from qiskit import QuantumCircuit
 from qiskit.quantum_info import PauliList
 from qiskit_addon_cutting import generate_cutting_experiments, partition_problem
 
-from source.component.dataclass.job_info import JobInfo
+from source.models.job import JobInfo
 from source.flow.schedule.cutting.base_policy import BaseCuttingPolicy
 from source.flow.schedule.cutting.greedy_policy import GreedyCuttingPolicy
 from source.flow.schedule.cutting.half_policy import HalfCuttingPolicy
@@ -335,14 +335,14 @@ class CircuitCutter:
                 shots=parent_job.shots,
                 arrival_time=parent_job.arrival_time,
                 priority=parent_job.priority,
-                parentJob=parent_job,
+                parent_job=parent_job,
                 partition_label=label,
                 subexperiments=subexperiments[label],
                 cutting_overhead=overhead,
             )
             children_jobs[child_name] = child_job
 
-        parent_job.childrenJobs = children_jobs
+        parent_job.children_jobs = children_jobs
         return children_jobs
 
     # -------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 
 import math
 from typing import Any, Dict, List
-from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
+from source.models.job import JobInfo, SchedulerJobInfo
 from source.flow.schedule.cutting.cutter_pipeline import CircuitCutter
 
 
@@ -23,14 +23,14 @@ class SchedulingCutterHelper:
     def can_cut(job: SchedulerJobInfo | JobInfo, min_qubits: int = 2) -> bool:
         """Check if a circuit is eligible for cutting.
 
-        Eligible circuits must be uncut root circuits (parentJob is None) and have
+        Eligible circuits must be uncut root circuits (parent_job is None) and have
         qubits >= min_qubits.
         """
         job_info = job.job_information if isinstance(job, SchedulerJobInfo) else job
         if not job_info:
             return False
         qubits = getattr(job_info, "num_qubits", 0) or getattr(getattr(job_info, "circuit", None), "num_qubits", 0)
-        return job_info.parentJob is None and qubits >= min_qubits
+        return getattr(job_info, "parent_job", None) is None and qubits >= min_qubits
 
     @classmethod
     def estimate_overhead(

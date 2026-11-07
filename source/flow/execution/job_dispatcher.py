@@ -5,7 +5,7 @@ Handles candidate selection for quantum machines using configurable dispatching 
 - 'backfill': Skips blocked or oversized leading jobs to fit smaller queued jobs into remaining capacity.
 """
 
-from source.component.dataclass.job_info import ExecutionResult, SchedulerJobInfo
+from source.models.job import ExecutionResult, SchedulerJobInfo
 
 
 class JobDispatcher:

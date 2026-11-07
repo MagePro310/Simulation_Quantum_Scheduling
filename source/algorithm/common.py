@@ -1,14 +1,9 @@
 """Common helper functions for quantum scheduling algorithms."""
 
-from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
-from source.component.help_function.estimated_time import EstimatedTime
+from __future__ import annotations
 
-
-def estimate_job_duration(job: SchedulerJobInfo) -> float:
-    """Estimate duration using default shots and a minimum depth of one."""
-    if job.job_information is None:
-        return 0.0
-    return EstimatedTime().estimate_execution_time_without_machine(job.job_information)
+from source.models.job import JobInfo, SchedulerJobInfo
+from source.utils.timing import estimate_job_duration
 
 
 def merge_dependencies(
@@ -24,3 +19,6 @@ def merge_dependencies(
             dependencies.append(dependency)
             seen_ids.add(dependency_id)
     return dependencies
+
+
+__all__ = ["estimate_job_duration", "merge_dependencies"]

@@ -1,10 +1,10 @@
-# Generated from conda env "scquan" (Python 3.12.12)
-# Pinned to versions actually used by this project (see imports under
-# algorithm/, component/, flow/, tests/, run_simulation.py).
+# Core dependencies for Simulation_Quantum_Scheduling
+# Verified with Python 3.12 (conda env "scquan")
 matplotlib==3.10.8
 mqt.bench==2.1.0
 numpy==2.4.1
 pytest==8.4.2
+pyyaml==6.0.2
 qiskit==2.3.0
 qiskit-addon-cutting==0.9.0
 qiskit-aer==0.17.2

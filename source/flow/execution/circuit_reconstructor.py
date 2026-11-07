@@ -4,7 +4,7 @@ import numpy as np
 from qiskit_aer import AerSimulator
 from qiskit_addon_cutting import reconstruct_expectation_values
 
-from source.component.help_function.fidelity import compute_hellinger_fidelity
+from source.utils.fidelity import compute_hellinger_fidelity
 
 
 class CircuitReconstructor:

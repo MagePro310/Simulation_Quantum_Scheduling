@@ -5,7 +5,7 @@ orchestrator and batch executors focused purely on scheduling logic.
 """
 
 from typing import Any
-from source.component.dataclass.job_info import ExecutionResult
+from source.models.job import ExecutionResult
 
 
 class ConsoleTimelineReporter:

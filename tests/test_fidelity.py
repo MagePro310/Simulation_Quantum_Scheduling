@@ -8,15 +8,15 @@ import pytest
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import hellinger_fidelity
 
-from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
-from source.component.dataclass.machine_characteristic import MachineCharacteristic
-from source.component.dataclass.result_schedule import ResultOfSchedule
-from source.component.ibm_simulator.sim_machine5qubits import FakeBelemV2
-from source.component.help_function.fidelity import (
+from source.models.job import JobInfo, SchedulerJobInfo
+from source.models.machine import MachineCharacteristic
+from source.models.schedule_result import ResultOfSchedule
+from source.simulator import FakeBelemV2
+from source.utils.fidelity import (
     compute_hellinger_fidelity,
     compute_total_variation_distance,
 )
-from source.flow.execution.orchestrator import ConcreteExecutionPhase
+from source.flow.execution.orchestrator import ExecutionPhase
 
 
 def test_hellinger_fidelity_reference_example():
@@ -57,7 +57,7 @@ def test_hellinger_fidelity_edge_cases():
 
 
 def test_execution_phase_calculates_hellinger_fidelity():
-    """Verify ConcreteExecutionPhase computes Hellinger fidelity on executed jobs."""
+    """Verify ExecutionPhase computes Hellinger fidelity on executed jobs."""
     # Create simple 2-qubit Bell circuit
     qc = QuantumCircuit(2, 2)
     qc.h(0)
@@ -80,7 +80,7 @@ def test_execution_phase_calculates_hellinger_fidelity():
     )
 
     capture_result = ResultOfSchedule()
-    exec_phase = ConcreteExecutionPhase()
+    exec_phase = ExecutionPhase()
     results = exec_phase.execute(
         machines={"belem": machine},
         scheduler_job={"bell_job": sched_job},

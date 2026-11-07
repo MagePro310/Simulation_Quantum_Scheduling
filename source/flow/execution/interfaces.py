@@ -5,7 +5,7 @@ allowing custom dispatchers, layout strategies, and reporters to be injected fre
 """
 
 from typing import Any, Protocol
-from source.component.dataclass.job_info import ExecutionResult, SchedulerJobInfo
+from source.models.job import ExecutionResult, SchedulerJobInfo
 
 
 class JobDispatcherProtocol(Protocol):

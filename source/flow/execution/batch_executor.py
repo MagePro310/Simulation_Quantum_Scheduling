@@ -12,13 +12,13 @@ from qiskit.transpiler import generate_preset_pass_manager
 from qiskit_aer import AerSimulator
 from qiskit_ibm_runtime import SamplerV2
 
-from source.component.dataclass.execution_info import (
+from source.models.execution import (
     BatchCounts,
     BatchExecutionRecord,
     PreparedBatch,
 )
-from source.component.dataclass.job_info import ExecutionResult, SchedulerJobInfo
-from source.component.dataclass.machine_characteristic import MachineCharacteristic
+from source.models.job import ExecutionResult, SchedulerJobInfo
+from source.models.machine import MachineCharacteristic
 from source.flow.execution.circuit_composer import CircuitPreparation
 from source.flow.execution.interfaces import DefaultLayoutStrategy, LayoutStrategy
 from source.flow.execution.quantum_simulator import QuantumExecutor
@@ -168,8 +168,9 @@ class BatchExecutor:
             pubs.append(PubResult(db))
 
         sub_res = PrimitiveResult(pubs)
-        if info.parentJob and getattr(info.parentJob, "cutting_context", None):
-            info.parentJob.cutting_context.sub_results[info.partition_label] = sub_res
+        parent_job = getattr(info, "parent_job", None)
+        if parent_job and getattr(parent_job, "cutting_context", None):
+            parent_job.cutting_context.sub_results[info.partition_label] = sub_res
 
         obs_meas = getattr(getattr(sub_res[0], "data", None), "observable_measurements", None)
         first_counts = dict(obs_meas.get_counts()) if obs_meas else {}

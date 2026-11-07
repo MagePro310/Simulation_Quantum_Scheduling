@@ -12,9 +12,9 @@ from typing import Any
 from qiskit.circuit import ClassicalRegister, QuantumCircuit, QuantumRegister
 from qiskit.compiler import transpile
 
-from source.component.dataclass.execution_info import PreparedBatch
-from source.component.dataclass.job_info import JobInfo
-from source.component.dataclass.machine_characteristic import MachineCharacteristic
+from source.models.execution import PreparedBatch
+from source.models.job import JobInfo
+from source.models.machine import MachineCharacteristic
 
 
 class CircuitPreparation:

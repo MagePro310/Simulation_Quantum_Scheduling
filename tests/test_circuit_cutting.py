@@ -5,16 +5,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pytest
 from mqt.bench import BenchmarkLevel, get_benchmark
 
-from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
-from source.component.dataclass.machine_characteristic import MachineCharacteristic
-from source.component.dataclass.result_schedule import ResultOfSchedule
-from source.component.ibm_simulator.sim_machine5qubits import FakeBelemV2, FakeBogotaV2
-from source.flow.schedule.circuit_cutter import GreedyCircuitCutter, CircuitCutter, SchedulingCutterHelper
+from source.models.job import JobInfo, SchedulerJobInfo
+from source.models.machine import MachineCharacteristic
+from source.models.schedule_result import ResultOfSchedule
+from source.simulator import FakeBelemV2, FakeBogotaV2
+from source.flow.schedule.cutting import GreedyCircuitCutter, CircuitCutter, SchedulingCutterHelper
 from source.flow.schedule.pre_schedule import PreSchedulePhase
-from source.flow.schedule.phase_schedule import ConcreteSchedulePhase
-from source.algorithm.heuristic.FFD import FFD
-from source.algorithm.heuristic.FFD_v2 import FFD_v2
-from source.algorithm.heuristic.Adaptive_FFD import Adaptive_FFD
+from source.flow.schedule.schedule_phase import SchedulePhase
+from source.algorithm.heuristic.ffd import FFD
+from source.algorithm.heuristic.ffd_v2 import FFD_v2
+from source.algorithm.heuristic.adaptive_ffd import Adaptive_FFD
 
 
 def test_greedy_partition_labels():
@@ -74,9 +74,9 @@ def test_circuit_cutter_decomposition():
 
     assert child_A.num_qubits == 5
     assert child_B.num_qubits == 2
-    assert child_A.parentJob is parent_job
-    assert child_B.parentJob is parent_job
-    assert parent_job.childrenJobs == children
+    assert child_A.parent_job is parent_job
+    assert child_B.parent_job is parent_job
+    assert parent_job.children_jobs == children
     assert parent_job.cutting_context is not None
     assert parent_job.cutting_overhead == 9.0
     assert child_A.cutting_overhead == 9.0
@@ -100,9 +100,9 @@ def test_circuit_cutter_half_decomposition():
     # Half cut splits 7 qubits into [4, 3]
     assert child_A.num_qubits == 4
     assert child_B.num_qubits == 3
-    assert child_A.parentJob is parent_job
-    assert child_B.parentJob is parent_job
-    assert parent_job.childrenJobs == children
+    assert child_A.parent_job is parent_job
+    assert child_B.parent_job is parent_job
+    assert parent_job.children_jobs == children
     assert parent_job.cutting_context is not None
     assert parent_job.cutting_context.policy == "half"
 
@@ -249,8 +249,8 @@ def test_ffd_v2_cutting_and_reordering():
 
 
 def test_ffd_v2_end_to_end_flow():
-    """Test full pipeline with PreSchedule, FFD_v2, and ConcreteExecutionPhase."""
-    from source.flow.execution.orchestrator import ConcreteExecutionPhase
+    """Test full pipeline with PreSchedule, FFD_v2, and ExecutionPhase."""
+    from source.flow.execution.orchestrator import ExecutionPhase
 
     qc2 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=2)
     qc7 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=7)
@@ -266,7 +266,7 @@ def test_ffd_v2_end_to_end_flow():
     }
 
     capture_res = ResultOfSchedule()
-    phase = ConcreteSchedulePhase(algorithm=FFD_v2(), exceed_cutting_policy="greedy")
+    phase = SchedulePhase(algorithm=FFD_v2(), exceed_cutting_policy="greedy")
     scheduled = phase.execute(origin_jobs, machines, capture_res)
 
     # PreSchedule cuts j7 into [5, 2]
@@ -277,7 +277,7 @@ def test_ffd_v2_end_to_end_flow():
     assert "j2_sub_B" in scheduled
 
     # Run execution phase to ensure reconstruction succeeds
-    exec_phase = ConcreteExecutionPhase()
+    exec_phase = ExecutionPhase()
     results = exec_phase.execute(machines, scheduled, capture_result_schedule=capture_res)
 
     # Both parent jobs must have reconstructed results
@@ -290,9 +290,9 @@ def test_ffd_v2_end_to_end_flow():
 
 
 def test_cutting_overhead_aggregation():
-    from source.component.dataclass.result_schedule import ExecutionSummary
+    from source.models.schedule_result import ExecutionSummary
     from source.flow.execution.metrics_calculator import MetricsCalculator
-    from source.component.dataclass.job_info import ExecutionResult
+    from source.models.job import ExecutionResult
 
     summary = ExecutionSummary()
     # Simulate two cut jobs: one with overhead 81, another with overhead 30, and one uncut job (overhead 0)
@@ -381,9 +381,9 @@ def test_cutter_pipeline_helpers():
 
 
 def test_pre_schedule_phase_decomposed_helpers():
-    from source.component.dataclass.job_info import JobInfo
-    from source.component.dataclass.machine_characteristic import MachineCharacteristic
-    from source.component.ibm_simulator.sim_machine5qubits import FakeBelemV2
+    from source.models.job import JobInfo
+    from source.models.machine import MachineCharacteristic
+    from source.simulator import FakeBelemV2
 
     machines = {"belem": MachineCharacteristic(name="belem", quantum_machine=FakeBelemV2(), capacity=5)}
     assert SchedulingCutterHelper.get_max_capacity(machines) == 5
@@ -498,9 +498,9 @@ def test_scheduling_cutter_helper_cut_job_preserves_constraints():
     assert child_B.depends_on == [dep_job]
 
     # Check parent/child links
-    assert child_A.job_information.parentJob is parent_job
-    assert child_B.job_information.parentJob is parent_job
-    assert parent_job.childrenJobs == {
+    assert child_A.job_information.parent_job is parent_job
+    assert child_B.job_information.parent_job is parent_job
+    assert parent_job.children_jobs == {
         "test_p4_sub_A": child_A.job_information,
         "test_p4_sub_B": child_B.job_information,
     }
@@ -511,7 +511,7 @@ def test_scheduling_cutter_helper_can_cut():
     """Verify can_cut checks 1-level hierarchy and minimum qubits."""
     qc3 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=3)
     root_job = JobInfo(job_name="root", circuit=qc3, num_qubits=3)
-    already_cut = JobInfo(job_name="child", circuit=qc3, num_qubits=3, parentJob=root_job)
+    already_cut = JobInfo(job_name="child", circuit=qc3, num_qubits=3, parent_job=root_job)
     one_qubit_job = JobInfo(job_name="q1", circuit=None, num_qubits=1)
 
     assert SchedulingCutterHelper.can_cut(root_job, min_qubits=2) is True
@@ -545,7 +545,7 @@ def test_circuit_cutter_cut_by_partition_sizes():
 
 
 def test_concrete_schedule_phase_auto_detects_optional_cutting():
-    """Verify ConcreteSchedulePhase auto-detects optional cutting performed by FFD_v2."""
+    """Verify SchedulePhase auto-detects optional cutting performed by FFD_v2."""
     qc7 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=7)
     qc3 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=3)
 
@@ -560,14 +560,14 @@ def test_concrete_schedule_phase_auto_detects_optional_cutting():
 
     # Case 1: Standard FFD does not perform optional cutting on job_small
     capture_ffd = ResultOfSchedule()
-    phase_ffd = ConcreteSchedulePhase(algorithm=FFD(), exceed_cutting_policy="greedy")
+    phase_ffd = SchedulePhase(algorithm=FFD(), exceed_cutting_policy="greedy")
     res_ffd = phase_ffd.execute(origin_jobs, machines, capture_ffd)
     assert capture_ffd.optional_cutting is False
     assert "job_small" in res_ffd  # Kept uncut
 
     # Case 2: FFD_v2 performs circuit cutting on job_small
     capture_v2 = ResultOfSchedule()
-    phase_v2 = ConcreteSchedulePhase(algorithm=FFD_v2(), exceed_cutting_policy="greedy")
+    phase_v2 = SchedulePhase(algorithm=FFD_v2(), exceed_cutting_policy="greedy")
     res_v2 = phase_v2.execute(origin_jobs, machines, capture_v2)
     assert capture_v2.optional_cutting is True
     assert "job_small_sub_A" in res_v2
@@ -576,7 +576,7 @@ def test_concrete_schedule_phase_auto_detects_optional_cutting():
 
 def test_ffd_v2_end_to_end_simulation_and_reconstruction():
     """Full end-to-end integration test: PreSchedule -> FFD_v2 -> Execution -> Reconstruct."""
-    from source.flow.execution.orchestrator import ConcreteExecutionPhase
+    from source.flow.execution.orchestrator import ExecutionPhase
 
     qc7 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=7)
     qc3 = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=3)
@@ -591,7 +591,7 @@ def test_ffd_v2_end_to_end_simulation_and_reconstruction():
     }
 
     capture_res = ResultOfSchedule()
-    phase = ConcreteSchedulePhase(algorithm=FFD_v2(), exceed_cutting_policy="greedy")
+    phase = SchedulePhase(algorithm=FFD_v2(), exceed_cutting_policy="greedy")
     scheduled = phase.execute(origin_jobs, machines, capture_res)
 
     # 4 subcircuits generated:
@@ -604,7 +604,7 @@ def test_ffd_v2_end_to_end_simulation_and_reconstruction():
     assert "job_small_sub_B" in scheduled
 
     # Execute simulation and reconstruction
-    exec_phase = ConcreteExecutionPhase()
+    exec_phase = ExecutionPhase()
     results = exec_phase.execute(machines, scheduled, capture_result_schedule=capture_res)
 
     # Both parent circuits must succeed and have reconstructed distributions
@@ -648,7 +648,7 @@ def test_adaptive_ffd_on_the_fly_slack_cutting():
     }
 
     capture = ResultOfSchedule()
-    phase = ConcreteSchedulePhase(algorithm=Adaptive_FFD(), exceed_cutting_policy="greedy")
+    phase = SchedulePhase(algorithm=Adaptive_FFD(), exceed_cutting_policy="greedy")
     scheduled = phase.execute(origin_jobs, machines, capture)
 
     # j_slack_cut (4q) was scheduled first into the 5q machine uncut
@@ -683,7 +683,7 @@ def test_adaptive_ffd_no_unnecessary_cuts():
     }
 
     capture = ResultOfSchedule()
-    phase = ConcreteSchedulePhase(algorithm=Adaptive_FFD(), exceed_cutting_policy="greedy")
+    phase = SchedulePhase(algorithm=Adaptive_FFD(), exceed_cutting_policy="greedy")
     scheduled = phase.execute(origin_jobs, machines, capture)
 
     # Both jobs fit perfectly (2 + 3 = 5), so no cutting occurred

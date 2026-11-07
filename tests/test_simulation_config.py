@@ -4,16 +4,16 @@ from pathlib import Path
 import tempfile
 import pytest
 
-from source.algorithm.heuristic.FFD import FFD
-from source.component.dataclass.result_schedule import ResultOfSchedule
-from source.component.dataclass.simulation_config import (
+from source.algorithm.heuristic.ffd import FFD
+from source.models.schedule_result import ResultOfSchedule
+from source.models.simulation_config import (
     SimulationConfig,
     WorkloadConfig,
     SchedulingConfig,
     ExecutionConfig,
     BatchConfig,
 )
-from source.flow.input.phase_input import ConcreteInputPhase
+from source.flow.input.input_phase import InputPhase
 from source.flow.runner import run_pipeline
 
 
@@ -102,8 +102,8 @@ def test_simulation_config_strict_validation():
         WorkloadConfig(jobs={}, generator=None)
 
 
-def test_concrete_input_phase_custom_config():
-    """Verify that ConcreteInputPhase generates circuits and machines matching config."""
+def test_input_phase_custom_config():
+    """Verify that InputPhase generates circuits and machines matching config."""
     config = SimulationConfig(
         workload=WorkloadConfig(
             benchmark="ghz",
@@ -117,7 +117,7 @@ def test_concrete_input_phase_custom_config():
     )
 
     capture = ResultOfSchedule()
-    input_phase = ConcreteInputPhase(config=config)
+    input_phase = InputPhase(config=config)
     jobs, machines = input_phase.create_input(capture)
 
     assert len(jobs) == 2
@@ -127,11 +127,11 @@ def test_concrete_input_phase_custom_config():
     assert jobs["t_job2"].circuit.num_qubits == 4
     assert len(machines) == 1
     assert "fake_belem" in machines
-    assert capture.numCircuits == 2
-    assert capture.nameCircuits == "ghz"
+    assert capture.num_circuits == 2
+    assert capture.name_circuits == "ghz"
 
 
-def test_concrete_input_phase_generator_mode():
+def test_input_phase_generator_mode():
     """Verify workload generation using config generator settings."""
     config = SimulationConfig(
         workload=WorkloadConfig(
@@ -144,7 +144,7 @@ def test_concrete_input_phase_generator_mode():
     )
 
     capture = ResultOfSchedule()
-    input_phase = ConcreteInputPhase(config=config)
+    input_phase = InputPhase(config=config)
     jobs, machines = input_phase.create_input(capture)
 
     assert len(jobs) == 3

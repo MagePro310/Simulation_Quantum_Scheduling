@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ProcessPoolExecutor, TimeoutError
 import csv
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sys
@@ -20,28 +20,19 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from source.component.dataclass.simulation_config import SimulationConfig
-
-# Known algorithm implementations
-ALGORITHM_REGISTRY: dict[str, str] = {
-    "FFD": "implement.FFD",
-    "FFD_v2": "implement.FFD_v2",
-    "Adaptive_FFD": "implement.Adaptive_FFD",
-    "LPT": "implement.LPT",
-    "QGroup": "implement.QGroup",
-}
+from source.models.simulation_config import SimulationConfig
 
 
 def get_batch_timestamp() -> str:
     """Return current UTC timestamp with microseconds."""
-    return datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
+    return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
 
 
-def _worker_task(module_name: str, config: dict[str, Any]) -> dict[str, Any]:
+def _worker_task(algo_name: str, config: dict[str, Any]) -> dict[str, Any]:
     """Execute algorithm pipeline in a separate, isolated OS process with config."""
-    import importlib
-    mod = importlib.import_module(module_name)
-    return mod.run_algorithm(config=config)
+    from source.flow.runner import run_pipeline
+
+    return run_pipeline(algorithm=algo_name, config=config)
 
 
 def create_csv_with_header(csv_path: Path) -> None:
@@ -106,12 +97,14 @@ def append_result_row(
         "end_timestamp": end_time,
         "process_status": status,
         "error_message": error_message or "",
-        "num_circuits": data.get("numCircuits", ""),
-        "name_circuits": data.get("nameCircuits", ""),
-        "average_qubits": data.get("averageQubits", ""),
-        "name_machines": json.dumps(data.get("nameMachines", "")) if "nameMachines" in data else "",
-        "name_schedule": data.get("nameSchedule", ""),
-        "schedule_latency": data.get("ScheduleLatency") or data.get("schedule_latency", ""),
+        "num_circuits": data.get("num_circuits") or data.get("numCircuits", ""),
+        "name_circuits": data.get("name_circuits") or data.get("nameCircuits", ""),
+        "average_qubits": data.get("average_qubits") or data.get("averageQubits", ""),
+        "name_machines": json.dumps(data.get("name_machines") or data.get("nameMachines", ""))
+        if ("name_machines" in data or "nameMachines" in data)
+        else "",
+        "name_schedule": data.get("name_schedule") or data.get("nameSchedule", ""),
+        "schedule_latency": data.get("schedule_latency") or data.get("ScheduleLatency", ""),
         "makespan": exec_summary.get("makespan", ""),
         "average_turnaround_time": exec_summary.get("average_turnaround_time", ""),
         "average_waiting_time": exec_summary.get("average_waiting_time", ""),
@@ -130,28 +123,14 @@ def append_result_row(
         "machine_config": data.get("machine_config", ""),
         "seed": data.get("seed", "0"),
         "queue_policy": data.get("queue_policy", "strict"),
-        "dependency_versions": json.dumps(data.get("dependency_versions", {})) if "dependency_versions" in data else "",
+        "dependency_versions": json.dumps(data.get("dependency_versions", {}))
+        if "dependency_versions" in data
+        else "",
     }
 
     with open(csv_path, "a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=row.keys())
         writer.writerow(row)
-
-
-def resolve_algorithm_module(algo_name: str) -> str:
-    """Resolve an algorithm name to its importable module path."""
-    if algo_name in ALGORITHM_REGISTRY:
-        return ALGORITHM_REGISTRY[algo_name]
-
-    # Check if a python file exists in implement/<algo_name>.py
-    implement_file = PROJECT_ROOT / "implement" / f"{algo_name}.py"
-    if implement_file.exists():
-        return f"implement.{algo_name}"
-
-    raise ValueError(
-        f"Unknown algorithm '{algo_name}'. Available implementations: "
-        f"{', '.join(ALGORITHM_REGISTRY.keys())}"
-    )
 
 
 def main() -> int:
@@ -201,11 +180,10 @@ def main() -> int:
     # Process Isolation: execute each algorithm in a dedicated worker process
     with ProcessPoolExecutor(max_workers=1) as executor:
         for run_index, algo_name in enumerate(algorithms_to_run, start=1):
-            module_name = resolve_algorithm_module(algo_name)
-            print(f"\n[{run_index}/{len(algorithms_to_run)}] Running {algo_name} (module={module_name})...")
+            print(f"\n[{run_index}/{len(algorithms_to_run)}] Running {algo_name}...")
 
-            start_time = datetime.utcnow().isoformat()
-            future = executor.submit(_worker_task, module_name, config_dict)
+            start_time = datetime.now(timezone.utc).isoformat()
+            future = executor.submit(_worker_task, algo_name, config_dict)
 
             try:
                 result_data = future.result(timeout=timeout)
@@ -217,7 +195,7 @@ def main() -> int:
                 result_data = None
                 status, error = "FAILED", f"Exception: {str(e)[:500]}"
 
-            end_time = datetime.utcnow().isoformat()
+            end_time = datetime.now(timezone.utc).isoformat()
             print(f"  Status: {status}")
             if error:
                 print(f"  Error: {error}")
@@ -239,10 +217,11 @@ def main() -> int:
     # Auto-generate comparison report and charts if requested
     if config.batch.auto_compare and csv_path.exists():
         print("\n" + "=" * 68)
-        print("  Auto-generating comparison report and charts (compare_results)...")
+        print("  Auto-generating comparison report and charts...")
         print("=" * 68)
         try:
-            from compare_results import run_comparison
+            from source.analysis.report_generator import run_comparison
+
             analysis_dir = run_comparison(csv_path)
             print(f"\nReport generated at: {analysis_dir / 'comparison_report.md'}")
         except Exception as e:

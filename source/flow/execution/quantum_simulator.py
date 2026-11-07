@@ -2,8 +2,8 @@
 
 from qiskit_aer import AerSimulator
 
-from source.component.dataclass.execution_info import BatchCounts, PreparedBatch
-from source.component.dataclass.machine_characteristic import MachineCharacteristic
+from source.models.execution import BatchCounts, PreparedBatch
+from source.models.machine import MachineCharacteristic
 
 
 class QuantumExecutor:

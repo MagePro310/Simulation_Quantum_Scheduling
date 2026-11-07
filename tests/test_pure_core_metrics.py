@@ -6,11 +6,11 @@ import pytest
 from qiskit import QuantumCircuit
 from dataclasses import dataclass
 
-from source.component.dataclass.job_info import JobInfo, ExecutionResult, SchedulerJobInfo
-from source.component.dataclass.result_schedule import ExecutionSummary
-from source.component.dataclass.execution_info import BatchExecutionRecord
+from source.models.job import JobInfo, ExecutionResult, SchedulerJobInfo
+from source.models.schedule_result import ExecutionSummary
+from source.models.execution import BatchExecutionRecord
 from source.flow.execution.metrics_calculator import MetricsCalculator
-from source.flow.execution.orchestrator import ConcreteExecutionPhase
+from source.flow.execution.orchestrator import ExecutionPhase
 
 
 def test_qubit_weighted_fidelity_calculation():
@@ -103,7 +103,7 @@ def test_cluster_and_machine_qubit_utilization():
 
 def test_queue_policy_strict_vs_backfill_dispatch():
     """Verify strict stops on Head-of-Line blocking, whereas backfill skips to fit available capacity."""
-    orchestrator = ConcreteExecutionPhase()
+    orchestrator = ExecutionPhase()
 
     qc_large = QuantumCircuit(5)
     job_large = JobInfo(job_name="large", circuit=qc_large, num_qubits=5, arrival_time=0.0)

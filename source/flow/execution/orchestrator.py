@@ -4,10 +4,10 @@ import heapq
 import math
 from dataclasses import dataclass
 
-from source.component.dataclass.execution_info import BatchCompletion
-from source.component.dataclass.job_info import ExecutionResult, SchedulerJobInfo
-from source.component.dataclass.machine_characteristic import MachineCharacteristic
-from source.component.dataclass.result_schedule import ExecutionSummary
+from source.models.execution import BatchCompletion
+from source.models.job import ExecutionResult, SchedulerJobInfo
+from source.models.machine import MachineCharacteristic
+from source.models.schedule_result import ExecutionSummary
 
 from source.flow.execution.batch_executor import BatchExecutor
 from source.flow.execution.interfaces import (
@@ -35,7 +35,7 @@ class MachineState:
             self.active = []
 
 
-class ConcreteExecutionPhase:
+class ExecutionPhase:
     """Quantum job execution orchestrator with Dependency Injection support."""
 
     def __init__(
@@ -178,7 +178,7 @@ class ConcreteExecutionPhase:
                 if results[job_name].status == "SUCCEEDED":
                     result = results[job_name]
                     info = getattr(result, "job_info", None)
-                    if info and getattr(info, "parentJob", None) is not None:
+                    if info and getattr(info, "parent_job", None) is not None:
                         continue
                     self.reporter.print_completion(job_name, result.execution_time, result.fidelity)
 
@@ -242,14 +242,14 @@ class ConcreteExecutionPhase:
 
     def _generate_gantt_safely(self, capture_result_schedule, gantt_output_path, results, machines) -> None:
         """Generate Gantt chart visualization safely without interrupting execution flow."""
-        algo_name = getattr(capture_result_schedule, "nameSchedule", "Schedule") if capture_result_schedule else "Schedule"
+        algo_name = getattr(capture_result_schedule, "name_schedule", "") or getattr(capture_result_schedule, "nameSchedule", "Schedule") if capture_result_schedule else "Schedule"
         if not gantt_output_path:
             from pathlib import Path
             project_root = Path(__file__).resolve().parents[3]
             gantt_output_path = project_root / "results" / "charts" / f"{algo_name}_gantt.png"
 
         try:
-            from source.component.help_function.gantt_chart import GanttChart
+            from source.utils.gantt_chart import GanttChart
             gantt = GanttChart(title=f"{algo_name} Schedule Gantt Chart")
             gantt.display(results, machines, output_path=gantt_output_path, execution_summary=self.execution_summary)
         except Exception as err:
