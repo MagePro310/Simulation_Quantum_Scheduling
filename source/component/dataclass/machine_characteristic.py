@@ -1,9 +1,6 @@
 from dataclasses import dataclass
 from typing import Any
-import sys
 
-# Add the project root to sys.path if not already there
-sys.path.append('./')
 
 @dataclass
 class MachineCharacteristic:

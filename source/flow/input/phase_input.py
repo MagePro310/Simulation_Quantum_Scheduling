@@ -1,7 +1,12 @@
 import sys
-sys.path.append('./')
+from pathlib import Path
+from typing import Any, Dict, Tuple
 
-from typing import Tuple, Any, Dict
+# Ensure project root is available in sys.path
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from mqt.bench import BenchmarkLevel, get_benchmark
 from source.component.dataclass.job_info import JobInfo
 from source.component.dataclass.machine_characteristic import MachineCharacteristic

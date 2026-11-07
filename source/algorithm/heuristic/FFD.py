@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 
+from source.algorithm.common import estimate_job_duration, merge_dependencies
 from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
 from source.component.dataclass.machine_characteristic import MachineCharacteristic
-from source.component.help_function.estimated_time import EstimatedTime
 
 
 @dataclass
@@ -218,7 +218,7 @@ class FFD:
     @staticmethod
     def _estimated_duration(job: SchedulerJobInfo) -> float:
         """Estimate duration using default shots and a minimum depth of one."""
-        return EstimatedTime().estimate_execution_time_without_machine(job.job_information)
+        return estimate_job_duration(job)
 
     @staticmethod
     def _merge_dependencies(
@@ -226,11 +226,4 @@ class FFD:
         previous_bin_jobs: list[JobInfo],
     ) -> list[JobInfo | None]:
         """Keep dependency order and deduplicate by identity, not dataclass values."""
-        dependencies: list[JobInfo | None] = []
-        seen_ids: set[int] = set()
-        for dependency in existing_dependencies + previous_bin_jobs:
-            dependency_id = id(dependency)
-            if dependency_id not in seen_ids:
-                dependencies.append(dependency)
-                seen_ids.add(dependency_id)
-        return dependencies
+        return merge_dependencies(existing_dependencies, previous_bin_jobs)

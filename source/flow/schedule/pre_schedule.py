@@ -1,10 +1,13 @@
 """Pre-schedule phase: ensures physical hardware feasibility by cutting oversized circuits."""
 
 import sys
+from pathlib import Path
 from typing import Any, Dict
 
-# Add the project root to sys.path if not already there
-sys.path.append('./')
+# Ensure project root is available in sys.path
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 from source.component.dataclass.job_info import JobInfo, SchedulerJobInfo
 from source.flow.schedule.cutting.schedule_cutter_helper import SchedulingCutterHelper
 

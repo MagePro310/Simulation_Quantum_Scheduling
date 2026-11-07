@@ -1,5 +1,10 @@
 import sys
-sys.path.append('./')
+from pathlib import Path
+
+# Ensure project root is available in sys.path
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from source.component.dataclass.job_info import JobInfo
 

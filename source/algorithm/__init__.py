@@ -4,6 +4,7 @@ Main interfaces, cutting tools, and heuristics for quantum job scheduling.
 """
 
 from source.algorithm.interfaces import ScheduleAlgorithmProtocol
+from source.algorithm.common import estimate_job_duration, merge_dependencies
 from source.algorithm.heuristic.FFD import FFD
 from source.algorithm.heuristic.FFD_v2 import FFD_v2
 from source.algorithm.heuristic.Adaptive_FFD import Adaptive_FFD, FFD_v3
@@ -14,6 +15,8 @@ from source.flow.schedule.cutting.schedule_cutter_helper import SchedulingCutter
 __all__ = [
     "ScheduleAlgorithmProtocol",
     "SchedulingCutterHelper",
+    "estimate_job_duration",
+    "merge_dependencies",
     "FFD",
     "FFD_v2",
     "Adaptive_FFD",
