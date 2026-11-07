@@ -58,7 +58,7 @@ COMPARISON_METRICS: list[dict[str, Any]] = [
     {
         "field": "cluster_qubit_utilization",
         "label": "Cluster Qubit Utilization",
-        "description": "Qubit space-time allocation over total cluster capacity × makespan",
+        "description": "Qubit space-time allocation over total cluster capacity * makespan",
         "unit": "Ratio (0-1)",
         "lower_is_better": False,
     },
@@ -402,7 +402,7 @@ def generate_markdown_report(
                 f.write("| " + " | ".join(row) + " |\n")
 
             f.write("\n")
-            f.write("**Note**: Utilization measures logical qubit allocation over capacity × makespan.\n\n")
+            f.write("**Note**: Utilization measures logical qubit allocation over capacity * makespan.\n\n")
         else:
             f.write("No machine utilization data available.\n\n")
 
@@ -751,34 +751,30 @@ def generate_charts(results: list[dict[str, Any]], output_dir: Path) -> list[Pat
     return chart_paths
 
 
-def main() -> int:
-    """Main entry point for result comparison."""
-    parser = argparse.ArgumentParser(
-        description="Compare quantum scheduling batch results"
-    )
-    parser.add_argument(
-        "csv_file",
-        type=Path,
-        help="Path to batch results CSV, relative to the working directory or project root"
-    )
-    args = parser.parse_args()
+def run_comparison(csv_path: Path | str) -> Path:
+    """Run batch results comparison, generating markdown report and charts.
 
-    csv_path = args.csv_file.expanduser()
-    if not csv_path.is_absolute() and not csv_path.exists():
-        csv_path = PROJECT_ROOT / csv_path
-    csv_path = csv_path.resolve()
+    Args:
+        csv_path: Path to batch results CSV file.
 
-    if not csv_path.exists():
-        print(f"Error: CSV file not found: {csv_path}", file=sys.stderr)
-        return 1
+    Returns:
+        Path to the analysis directory containing report and charts.
+    """
+    csv_file = Path(csv_path).expanduser()
+    if not csv_file.is_absolute() and not csv_file.exists():
+        csv_file = PROJECT_ROOT / csv_file
+    csv_file = csv_file.resolve()
+
+    if not csv_file.exists():
+        raise FileNotFoundError(f"CSV file not found: {csv_file}")
 
     # Create analysis directory
-    csv_stem = csv_path.stem
-    analysis_dir = csv_path.parent / f"analysis_{csv_stem}"
-    analysis_dir.mkdir(exist_ok=True)
+    csv_stem = csv_file.stem
+    analysis_dir = csv_file.parent / f"analysis_{csv_stem}"
+    analysis_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Loading results from: {csv_path}")
-    results = load_batch_results(csv_path)
+    print(f"Loading results from: {csv_file}")
+    results = load_batch_results(csv_file)
     print(f"  Loaded {len(results)} result rows")
 
     # Check compatibility
@@ -800,7 +796,27 @@ def main() -> int:
         print(f"  Created: {chart_path}")
 
     print(f"\n✅ Analysis complete. Results in: {analysis_dir}")
-    return 0
+    return analysis_dir
+
+
+def main() -> int:
+    """Main entry point for result comparison."""
+    parser = argparse.ArgumentParser(
+        description="Compare quantum scheduling batch results"
+    )
+    parser.add_argument(
+        "csv_file",
+        type=Path,
+        help="Path to batch results CSV, relative to the working directory or project root"
+    )
+    args = parser.parse_args()
+
+    try:
+        run_comparison(args.csv_file)
+        return 0
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

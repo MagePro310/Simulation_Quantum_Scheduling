@@ -1,10 +1,11 @@
-"""Run First Fit Decreasing Version 2 (FFD_v2) quantum scheduling algorithm.
+"""Run FFD_v2 quantum scheduling algorithm.
 
-Pre-sorts and cuts eligible circuits using Circuit Cutting Helper before bin packing.
+Enhanced First Fit Decreasing with improved packing efficiency.
 """
 
 from pathlib import Path
 import sys
+from typing import Any
 
 # Support running this script directly from any working directory
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -14,20 +15,14 @@ from source.flow.runner import run_cli, run_pipeline
 
 
 def run_algorithm(
+    config: Any = None,
     json_output: Path | None = None,
-    cutting_policy: str = "greedy",
-    queue_policy: str = "strict",
-    seed: int = 0,
-    **kwargs,
 ):
-    """Run the FFD_v2 scheduling algorithm and optionally save results to JSON."""
+    """Run the FFD_v2 scheduling algorithm driven strictly by config."""
     return run_pipeline(
         algorithm=FFD_v2(),
+        config=config,
         json_output=json_output,
-        cutting_policy=cutting_policy,
-        queue_policy=queue_policy,
-        seed=seed,
-        **kwargs,
     )
 
 

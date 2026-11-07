@@ -1,0 +1,34 @@
+# ====================================================================
+# SIMULATION QUANTUM SCHEDULING - QFT BENCHMARK
+# Benchmark experiment evaluating algorithms with Quantum Fourier Transform (QFT)
+# ====================================================================
+
+workload:
+  benchmark: "qft"
+  jobs:
+    job1: { qubits: 2, shots: 1024, arrival_time: 0, priority: 1 }
+    job2: { qubits: 3, shots: 1024, arrival_time: 0, priority: 1 }
+    job3: { qubits: 4, shots: 1024, arrival_time: 0, priority: 1 }
+    job4: { qubits: 6, shots: 1024, arrival_time: 0, priority: 1 }
+
+machines:
+  - "FakeBelemV2"    # 5 qubits
+  - "FakeBogotaV2"   # 5 qubits
+
+scheduling:
+  cutting_policy: "greedy"
+
+execution:
+  seed: 123
+  queue_policy: "strict"
+  timeout: 600
+
+batch:
+  algorithms:
+    - "FFD"
+    - "FFD_v2"
+    - "Adaptive_FFD"
+    - "LPT"
+    - "QGroup"
+  auto_compare: true
+  output_dir: "results"

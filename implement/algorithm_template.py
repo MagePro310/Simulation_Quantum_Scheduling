@@ -6,13 +6,14 @@ Steps to create a new algorithm:
 1. Copy this file to a new name in implement/ (e.g., implement/MyAlgorithm.py)
 2. Import and instantiate your algorithm class in run_algorithm()
 3. Update the algorithm name in run_cli(description="...")
-4. Add your algorithm to ALGORITHMS in run_batch.py (e.g. {"name": "MyAlgorithm", "module": "implement.MyAlgorithm"})
+4. Add your algorithm to batch.algorithms in configs/default_batch.yaml
 5. Run standalone: python implement/MyAlgorithm.py
    Run batch: python run_batch.py
 """
 
 from pathlib import Path
 import sys
+from typing import Any
 
 # Support running this script directly from any working directory
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -24,21 +25,15 @@ from source.flow.runner import run_cli, run_pipeline
 
 
 def run_algorithm(
+    config: Any = None,
     json_output: Path | None = None,
-    cutting_policy: str = "greedy",
-    queue_policy: str = "strict",
-    seed: int = 0,
-    **kwargs,
 ):
-    """Run the scheduling algorithm and optionally save results to JSON."""
+    """Run the scheduling algorithm driven strictly by config."""
     algorithm = FFD()  # Replace with your algorithm instance
     return run_pipeline(
         algorithm=algorithm,
+        config=config,
         json_output=json_output,
-        cutting_policy=cutting_policy,
-        queue_policy=queue_policy,
-        seed=seed,
-        **kwargs,
     )
 
 

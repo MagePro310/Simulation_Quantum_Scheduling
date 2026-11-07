@@ -1,0 +1,42 @@
+# ====================================================================
+# SIMULATION QUANTUM SCHEDULING CONFIGURATION
+# Single Source of Truth (SSOT) for all simulation parameters
+# ====================================================================
+
+# 1. Workload definition (Circuit Jobs)
+workload:
+  benchmark: "ghz"          # Benchmark name: 'ghz', 'qft', 'dj', 'grover', etc.
+  jobs:                     # List of explicit circuit jobs to schedule
+    job1: { qubits: 2, shots: 1024, arrival_time: 0, priority: 1 }
+    job2: { qubits: 2, shots: 1024, arrival_time: 0, priority: 1 }
+    job3: { qubits: 3, shots: 1024, arrival_time: 0, priority: 1 }
+    job4: { qubits: 7, shots: 1024, arrival_time: 0, priority: 1 }
+
+# 2. Quantum Machines definition
+machines:
+  - "FakeBelemV2"           # 5 qubits
+  - "FakeBogotaV2"          # 5 qubits
+  # Additional backends available from sim_backend:
+  # - "FakeManilaV2"        # 5 qubits
+  # - "FakeJakartaV2"       # 7 qubits
+
+# 3. Circuit Cutting Policy
+scheduling:
+  cutting_policy: "greedy"  # 'greedy' (max capacity packing) or 'half' (balanced partition)
+
+# 4. Execution & Simulator Parameters
+execution:
+  seed: 0                   # Random seed for transpiler and simulation reproducibility
+  queue_policy: "strict"    # 'strict' (FIFO queue), 'relaxed', or 'backfill'
+  timeout: 600              # Timeout in seconds per algorithm
+
+# 5. Batch Runner & Automated Comparison Configuration
+batch:
+  algorithms:               # List of algorithms to execute in batch mode
+    - "FFD"
+    - "FFD_v2"
+    - "Adaptive_FFD"
+    - "LPT"
+    - "QGroup"
+  auto_compare: true        # Automatically generate Markdown report and comparison charts
+  output_dir: "results"     # Output directory for results CSV, charts, and report

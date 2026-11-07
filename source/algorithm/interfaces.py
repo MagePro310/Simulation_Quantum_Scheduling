@@ -10,10 +10,10 @@ from source.component.dataclass.machine_characteristic import MachineCharacteris
 
 @runtime_checkable
 class ScheduleAlgorithmProtocol(Protocol):
-    """Giao diện chuẩn hóa cho mọi thuật toán lập lịch lượng tử.
+    """Standardized protocol for quantum scheduling algorithms.
 
-    Mọi thuật toán (FFD, FFD_v2, LPT, QGroup...) đều chuẩn hóa phương thức execute().
-    Nếu thuật toán có nhu cầu cắt mạch, có thể trực tiếp sử dụng thư viện
+    All algorithms (FFD, FFD_v2, LPT, QGroup, etc.) implement the execute() method.
+    If an algorithm requires circuit cutting, it can directly utilize
     `from source.algorithm import SchedulingCutterHelper`.
     """
 
@@ -22,5 +22,5 @@ class ScheduleAlgorithmProtocol(Protocol):
         scheduler_job: dict[str, SchedulerJobInfo],
         machines: dict[str, MachineCharacteristic],
     ) -> dict[str, SchedulerJobInfo]:
-        """Xây dựng lịch trình và trả về scheduler_job đã được gán máy và thứ tự."""
+        """Construct schedule and return scheduler_job with machine assignments and dispatch orders."""
         ...

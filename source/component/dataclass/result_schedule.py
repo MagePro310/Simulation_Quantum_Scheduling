@@ -20,7 +20,7 @@ class ExecutionSummary:
     - average_turnaround_time: mean (completion - arrival) across succeeded jobs
     - average_waiting_time: mean actual waiting time in queue (TAT - active execution)
     - average_fidelity: qubit-weighted mean circuit fidelity across succeeded jobs
-    - cluster_qubit_utilization: total qubit-time over total cluster capacity × makespan
+    - cluster_qubit_utilization: total qubit-time over total cluster capacity * makespan
     - total_cutting_overhead: sum of sampling overhead gamma^2 from circuit cutting
     """
 

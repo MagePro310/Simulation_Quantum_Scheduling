@@ -7,10 +7,10 @@ from source.flow.schedule.cutting.schedule_cutter_helper import SchedulingCutter
 
 
 class FFD_v2(FFD):
-    """First Fit Decreasing Version 2: Tự động sử dụng circuit cutting helper để tinh chỉnh đầu vào rồi xếp bin.
+    """First Fit Decreasing Version 2: Applies circuit cutting helper to optimize input before bin packing.
 
-    Không yêu cầu khai báo policy khi khởi tạo. Thuật toán tự động tính toán
-    và gọi công cụ cắt từ SchedulingCutterHelper với target qubit phù hợp.
+    Does not require an explicit policy at initialization. The algorithm dynamically calculates
+    and invokes the cutting helper with the appropriate target qubit capacity.
     """
 
     def __init__(self):
@@ -21,16 +21,16 @@ class FFD_v2(FFD):
         scheduler_job: dict[str, SchedulerJobInfo],
         machines: dict[str, MachineCharacteristic],
     ) -> dict[str, SchedulerJobInfo]:
-        """Thực thi FFD_v2: cắt mạch tối ưu hóa bằng cutting helper, sắp xếp và xếp bin."""
+        """Execute FFD_v2: optimize circuits via cutting helper, sort, and bin-pack."""
         if not scheduler_job:
             return scheduler_job
 
         max_capacity = SchedulingCutterHelper.get_max_capacity(machines)
 
         print("\n" + "=" * 65)
-        print("  [FFD_v2] Gọi Thư Viện Cutting Helper Để Tinh Chỉnh Đầu Vào")
+        print("  [FFD_v2] Invoking Circuit Cutting Helper To Refine Input")
         print("=" * 65)
-        # Cắt toàn bộ các mạch gốc đủ điều kiện với target là max_capacity (mặc định chia đôi cân bằng)
+        # Cut all eligible root circuits targeting max_capacity (default balanced partition)
         jobs_to_schedule = SchedulingCutterHelper.cut_jobs(
             jobs=scheduler_job,
             target_qubits=max_capacity,
@@ -38,17 +38,17 @@ class FFD_v2(FFD):
         )
 
         print("\n" + "=" * 65)
-        print("  [FFD_v2] Xếp Bin & Gán Máy Bằng First Fit Decreasing")
+        print("  [FFD_v2] Bin Packing & Machine Assignment via First Fit Decreasing")
         print("=" * 65)
-        # 1. Phân nhóm các mạch con vào các bin theo thứ tự qubit giảm dần
+        # 1. Group subcircuits into bins in decreasing qubit order
         packed_bins = self.pack(jobs_to_schedule, machines)
 
-        # 2. Sắp xếp thứ tự thực thi của các bin theo thời gian
+        # 2. Order bins execution by start time
         bins_in_execution_order = self._order_bins_by_start_time(
             packed_bins, jobs_to_schedule, machines
         )
 
-        # 3. Gán máy và thứ tự dispatch
+        # 3. Assign machines and dispatch orders
         self._assign_jobs(bins_in_execution_order, machines)
 
         return jobs_to_schedule

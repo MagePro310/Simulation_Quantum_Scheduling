@@ -1,10 +1,11 @@
 """Run QGroup quantum scheduling algorithm.
 
-Groups quantum circuits by resource similarity and scheduled execution windows using MILP.
+Groups quantum circuits based on compatibility and resource requirements.
 """
 
 from pathlib import Path
 import sys
+from typing import Any
 
 # Support running this script directly from any working directory
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -14,20 +15,14 @@ from source.flow.runner import run_cli, run_pipeline
 
 
 def run_algorithm(
+    config: Any = None,
     json_output: Path | None = None,
-    cutting_policy: str = "greedy",
-    queue_policy: str = "strict",
-    seed: int = 0,
-    **kwargs,
 ):
-    """Run the QGroup scheduling algorithm and optionally save results to JSON."""
+    """Run the QGroup scheduling algorithm driven strictly by config."""
     return run_pipeline(
         algorithm=QGroup(),
+        config=config,
         json_output=json_output,
-        cutting_policy=cutting_policy,
-        queue_policy=queue_policy,
-        seed=seed,
-        **kwargs,
     )
 
 

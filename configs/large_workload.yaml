@@ -1,0 +1,39 @@
+# ====================================================================
+# SIMULATION QUANTUM SCHEDULING - LARGE WORKLOAD
+# Scaled benchmark experiment: 8 circuits across 3 quantum machines
+# ====================================================================
+
+workload:
+  benchmark: "ghz"
+  jobs:
+    job1: { qubits: 2, shots: 1024, arrival_time: 0, priority: 1 }
+    job2: { qubits: 3, shots: 1024, arrival_time: 0, priority: 1 }
+    job3: { qubits: 4, shots: 1024, arrival_time: 0, priority: 1 }
+    job4: { qubits: 5, shots: 1024, arrival_time: 0, priority: 1 }
+    job5: { qubits: 2, shots: 1024, arrival_time: 0, priority: 1 }
+    job6: { qubits: 3, shots: 1024, arrival_time: 0, priority: 1 }
+    job7: { qubits: 6, shots: 1024, arrival_time: 0, priority: 1 }
+    job8: { qubits: 7, shots: 1024, arrival_time: 0, priority: 1 }
+
+machines:
+  - "FakeBelemV2"    # 5 qubits
+  - "FakeBogotaV2"   # 5 qubits
+  - "FakeManilaV2"   # 5 qubits
+
+scheduling:
+  cutting_policy: "greedy"
+
+execution:
+  seed: 42
+  queue_policy: "strict"
+  timeout: 600
+
+batch:
+  algorithms:
+    - "FFD"
+    - "FFD_v2"
+    - "Adaptive_FFD"
+    - "LPT"
+    - "QGroup"
+  auto_compare: true
+  output_dir: "results"

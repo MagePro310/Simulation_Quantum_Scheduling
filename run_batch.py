@@ -1,28 +1,35 @@
 #!/usr/bin/env python3
-"""Sequential batch runner for quantum scheduling algorithms with process isolation."""
+"""Sequential batch runner for quantum scheduling algorithms with process isolation.
+
+Uses SimulationConfig as the Single Source of Truth (SSOT), loading
+all parameters from YAML/JSON and ensuring identical environments across all algorithms.
+"""
+
+from __future__ import annotations
 
 import argparse
-import csv
-import json
-import sys
 from concurrent.futures import ProcessPoolExecutor, TimeoutError
+import csv
 from datetime import datetime
+import json
 from pathlib import Path
+import sys
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-RESULTS_DIR = PROJECT_ROOT / "results"
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-# Module import map for in-memory execution with process isolation
-ALGORITHMS = [
-    {"name": "FFD", "module": "implement.FFD"},
-    {"name": "FFD_v2", "module": "implement.FFD_v2"},
-    {"name": "Adaptive_FFD", "module": "implement.Adaptive_FFD"},
-    {"name": "LPT", "module": "implement.LPT"},
-    {"name": "QGroup", "module": "implement.QGroup"},
-]
+from source.component.dataclass.simulation_config import SimulationConfig
 
-TIMEOUT = 600  # seconds per algorithm
+# Known algorithm implementations
+ALGORITHM_REGISTRY: dict[str, str] = {
+    "FFD": "implement.FFD",
+    "FFD_v2": "implement.FFD_v2",
+    "Adaptive_FFD": "implement.Adaptive_FFD",
+    "LPT": "implement.LPT",
+    "QGroup": "implement.QGroup",
+}
 
 
 def get_batch_timestamp() -> str:
@@ -30,11 +37,11 @@ def get_batch_timestamp() -> str:
     return datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
 
 
-def _worker_task(module_name: str, **kwargs) -> dict[str, Any]:
-    """Execute algorithm pipeline in a separate, isolated OS process."""
+def _worker_task(module_name: str, config: dict[str, Any]) -> dict[str, Any]:
+    """Execute algorithm pipeline in a separate, isolated OS process with config."""
     import importlib
     mod = importlib.import_module(module_name)
-    return mod.run_algorithm(**kwargs)
+    return mod.run_algorithm(config=config)
 
 
 def create_csv_with_header(csv_path: Path) -> None:
@@ -88,7 +95,7 @@ def append_result_row(
     error_message: str | None,
     result_data: dict[str, Any] | None,
 ) -> None:
-    """Append one result row to the CSV file using direct fallbacks (no nested if-else)."""
+    """Append one result row to the CSV file using direct fallbacks."""
     data = result_data or {}
     exec_summary = data.get("execution_summary") or {}
 
@@ -131,66 +138,81 @@ def append_result_row(
         writer.writerow(row)
 
 
+def resolve_algorithm_module(algo_name: str) -> str:
+    """Resolve an algorithm name to its importable module path."""
+    if algo_name in ALGORITHM_REGISTRY:
+        return ALGORITHM_REGISTRY[algo_name]
+
+    # Check if a python file exists in implement/<algo_name>.py
+    implement_file = PROJECT_ROOT / "implement" / f"{algo_name}.py"
+    if implement_file.exists():
+        return f"implement.{algo_name}"
+
+    raise ValueError(
+        f"Unknown algorithm '{algo_name}'. Available implementations: "
+        f"{', '.join(ALGORITHM_REGISTRY.keys())}"
+    )
+
+
 def main() -> int:
-    """Run batch simulation and collect results."""
-    parser = argparse.ArgumentParser(description="Sequential batch runner for quantum scheduling algorithms")
-    parser.add_argument(
-        "--cutting-policy",
-        choices=["greedy", "half"],
-        default="greedy",
-        help="Mandatory cut policy for circuits exceeding machine capacity: 'greedy' or 'half' (default: 'greedy')",
+    """Run batch simulation driven by centralized configuration."""
+    parser = argparse.ArgumentParser(
+        description="Sequential batch runner for quantum scheduling algorithms"
     )
     parser.add_argument(
-        "--queue-policy",
-        choices=["strict", "relaxed", "backfill"],
-        default="strict",
-        help="Queue dispatch / backfilling policy: 'strict', 'relaxed', or 'backfill' (default: 'strict')",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=0,
-        help="Random seed for transpilation and simulation reproducibility (default: 0)",
-    )
-    parser.add_argument(
-        "--timeout",
-        type=int,
-        default=TIMEOUT,
-        help=f"Timeout in seconds per algorithm (default: {TIMEOUT})",
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to YAML/JSON simulation config file (default: configs/default_batch.yaml if present)",
     )
     args = parser.parse_args()
 
-    print(f"Configured algorithms: {', '.join(a['name'] for a in ALGORITHMS)}")
-    print(f"Circuit cutting: Mandatory exceed={args.cutting_policy}")
+    # Load and resolve centralized configuration (Single Source of Truth)
+    config = SimulationConfig.resolve(args.config)
+    config_dict = config.to_dict()
+
+    results_dir = PROJECT_ROOT / config.batch.output_dir
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    algorithms_to_run = config.batch.algorithms
+    cutting_policy = config.scheduling.cutting_policy
+    queue_policy = config.execution.queue_policy
+    seed = config.execution.seed
+    timeout = config.execution.timeout
+
+    print("====================================================================")
+    print("             QUANTUM SCHEDULING BATCH SIMULATION RUNNER             ")
+    print("====================================================================")
+    print(f"Config Source   : {args.config if args.config else 'configs/default_batch.yaml (auto-detected)'}")
+    print(f"Algorithms ({len(algorithms_to_run)}): {', '.join(algorithms_to_run)}")
+    print(f"Target Workload : {config.workload.benchmark} ({len(config.workload.jobs)} jobs)")
+    print(f"Target Machines : {', '.join(config.machines)}")
+    print(f"Cutting Policy  : {cutting_policy}")
+    print(f"Queue Policy    : {queue_policy}")
+    print(f"Random Seed     : {seed}")
+    print(f"Timeout / Algo  : {timeout}s")
+    print("====================================================================")
 
     # Create timestamped CSV
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    csv_path = RESULTS_DIR / f"{get_batch_timestamp()}.csv"
-    print(f"Creating batch results file: {csv_path}")
+    csv_path = results_dir / f"{get_batch_timestamp()}.csv"
+    print(f"\nCreating batch results file: {csv_path}")
     create_csv_with_header(csv_path)
 
     # Process Isolation: execute each algorithm in a dedicated worker process
     with ProcessPoolExecutor(max_workers=1) as executor:
-        for run_index, algo in enumerate(ALGORITHMS, start=1):
-            algo_name = algo["name"]
-            print(f"\n[{run_index}/{len(ALGORITHMS)}] Running {algo_name} (policy={args.cutting_policy}, queue={args.queue_policy}, seed={args.seed})...")
-
-            kwargs = {
-                "cutting_policy": args.cutting_policy,
-                "queue_policy": args.queue_policy,
-                "seed": args.seed,
-            }
+        for run_index, algo_name in enumerate(algorithms_to_run, start=1):
+            module_name = resolve_algorithm_module(algo_name)
+            print(f"\n[{run_index}/{len(algorithms_to_run)}] Running {algo_name} (module={module_name})...")
 
             start_time = datetime.utcnow().isoformat()
-            future = executor.submit(_worker_task, algo["module"], **kwargs)
+            future = executor.submit(_worker_task, module_name, config_dict)
 
-            # DUY NHẤT 1 TẦNG BẢO VỆ NGOÀI CÙNG
             try:
-                result_data = future.result(timeout=args.timeout)
+                result_data = future.result(timeout=timeout)
                 status, error = "SUCCESS", None
             except TimeoutError:
                 result_data = None
-                status, error = "FAILED", f"Process timeout ({args.timeout}s)"
+                status, error = "FAILED", f"Process timeout ({timeout}s)"
             except Exception as e:
                 result_data = None
                 status, error = "FAILED", f"Exception: {str(e)[:500]}"
@@ -213,6 +235,19 @@ def main() -> int:
             print("  Result appended to CSV")
 
     print(f"\nBatch complete. Results saved to: {csv_path}")
+
+    # Auto-generate comparison report and charts if requested
+    if config.batch.auto_compare and csv_path.exists():
+        print("\n" + "=" * 68)
+        print("  Auto-generating comparison report and charts (compare_results)...")
+        print("=" * 68)
+        try:
+            from compare_results import run_comparison
+            analysis_dir = run_comparison(csv_path)
+            print(f"\nReport generated at: {analysis_dir / 'comparison_report.md'}")
+        except Exception as e:
+            print(f"Warning: Could not auto-generate comparison report: {e}", file=sys.stderr)
+
     return 0
 
 
