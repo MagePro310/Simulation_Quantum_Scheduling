@@ -1,8 +1,0 @@
-/.github
-
-# Python bytecode
-__pycache__/
-*.pyc
-
-# Local agent docs
-AGENTS.md
