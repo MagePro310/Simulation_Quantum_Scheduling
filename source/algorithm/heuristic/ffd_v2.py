@@ -32,7 +32,7 @@ class FFD_v2(FFD):
         print("\n" + "=" * 65)
         print("  [FFD_v2] Invoking Circuit Cutting Helper To Refine Input")
         print("=" * 65)
-        # Cut all eligible root circuits targeting max_capacity (default balanced partition)
+        # Cut all eligible root circuits targeting max_capacity (default 'half' mode)
         jobs_to_schedule = SchedulingCutterHelper.cut_jobs(
             jobs=scheduler_job,
             target_qubits=max_capacity,

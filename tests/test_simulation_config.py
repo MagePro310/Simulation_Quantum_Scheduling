@@ -173,8 +173,8 @@ def test_run_pipeline_single_source_of_truth():
         config=config,
     )
 
-    assert result["numCircuits"] == 2
+    assert result["num_circuits"] == 2
     assert result["seed"] == 77
     assert result["queue_policy"] == "strict"
     assert result["exceed_cutting_policy"] == "greedy"
-    assert "fake_belem" in result["nameMachines"]
+    assert "fake_belem" in result["name_machines"]

@@ -3,56 +3,23 @@
 from __future__ import annotations
 
 from typing import Any
-import matplotlib
-import numpy
-import qiskit
 
 from source.models.schedule_result import ResultOfSchedule
+from source.utils.provenance import dependency_versions
 
 
 def serialize_result(capture_result_schedule: ResultOfSchedule) -> dict[str, Any]:
     """Convert ResultOfSchedule to a JSON-serializable dictionary."""
-    num_circuits = getattr(capture_result_schedule, "num_circuits", None)
-    if num_circuits is None:
-        num_circuits = getattr(capture_result_schedule, "numCircuits", 0)
-
-    name_circuits = getattr(capture_result_schedule, "name_circuits", None)
-    if name_circuits is None:
-        name_circuits = getattr(capture_result_schedule, "nameCircuits", "")
-
-    avg_qubits = getattr(capture_result_schedule, "average_qubits", None)
-    if avg_qubits is None:
-        avg_qubits = getattr(capture_result_schedule, "averageQubits", 0.0)
-
-    name_machines = getattr(capture_result_schedule, "name_machines", None)
-    if name_machines is None:
-        name_machines = getattr(capture_result_schedule, "nameMachines", [])
-
-    name_schedule = getattr(capture_result_schedule, "name_schedule", None)
-    if name_schedule is None:
-        name_schedule = getattr(capture_result_schedule, "nameSchedule", "")
-
-    latency = getattr(capture_result_schedule, "schedule_latency", None)
-    if latency is None:
-        latency = getattr(capture_result_schedule, "ScheduleLatency", 0.0)
-
     result_dict: dict[str, Any] = {
-        "num_circuits": num_circuits,
-        "name_circuits": name_circuits,
-        "average_qubits": avg_qubits,
-        "name_machines": name_machines,
-        "name_schedule": name_schedule,
-        "schedule_latency": latency,
-        # Legacy key aliases for backward compatibility with external consumer tools
-        "numCircuits": num_circuits,
-        "nameCircuits": name_circuits,
-        "averageQubits": avg_qubits,
-        "nameMachines": name_machines,
-        "nameSchedule": name_schedule,
-        "ScheduleLatency": latency,
-        "exceed_cutting_policy": getattr(capture_result_schedule, "exceed_cutting_policy", "greedy"),
-        "optional_cutting": getattr(capture_result_schedule, "optional_cutting", False),
-        "optional_cutting_policy": getattr(capture_result_schedule, "optional_cutting_policy", None),
+        "num_circuits": capture_result_schedule.num_circuits,
+        "name_circuits": capture_result_schedule.name_circuits,
+        "average_qubits": capture_result_schedule.average_qubits,
+        "name_machines": capture_result_schedule.name_machines,
+        "name_schedule": capture_result_schedule.name_schedule,
+        "schedule_latency": capture_result_schedule.schedule_latency,
+        "exceed_cutting_policy": capture_result_schedule.exceed_cutting_policy,
+        "optional_cutting": capture_result_schedule.optional_cutting,
+        "optional_cutting_policy": capture_result_schedule.optional_cutting_policy,
     }
 
     if capture_result_schedule.execution_summary:
@@ -97,15 +64,13 @@ def serialize_result(capture_result_schedule: ResultOfSchedule) -> dict[str, Any
     else:
         result_dict["execution_summary"] = None
 
-    result_dict["seed"] = getattr(capture_result_schedule, "seed", 0)
-    result_dict["queue_policy"] = getattr(capture_result_schedule, "queue_policy", "strict")
-    result_dict["workload_fingerprint"] = f"{num_circuits}_{name_circuits}"
-    result_dict["machine_config"] = str(name_machines)
-    result_dict["dependency_versions"] = {
-        "qiskit": qiskit.__version__,
-        "numpy": numpy.__version__,
-        "matplotlib": matplotlib.__version__,
-    }
+    result_dict["seed"] = capture_result_schedule.seed
+    result_dict["queue_policy"] = capture_result_schedule.queue_policy
+    result_dict["workload_fingerprint"] = capture_result_schedule.workload_fingerprint
+    result_dict["machine_config"] = str(capture_result_schedule.name_machines)
+    result_dict["git_commit"] = capture_result_schedule.git_commit
+    result_dict["config"] = capture_result_schedule.config
+    result_dict["dependency_versions"] = dependency_versions()
 
     return result_dict
 
@@ -115,33 +80,16 @@ def print_schedule_result(
     schedule_result: dict | None = None,
 ) -> None:
     """Print comprehensive scheduling and execution results to terminal."""
-    algo = getattr(capture_result_schedule, "name_schedule", "") or getattr(
-        capture_result_schedule, "nameSchedule", "Unknown"
-    )
-    exceed_policy = getattr(capture_result_schedule, "exceed_cutting_policy", "greedy")
-    opt_cutting = getattr(capture_result_schedule, "optional_cutting", False)
-    opt_policy = getattr(capture_result_schedule, "optional_cutting_policy", "half") or "half"
-    queue_policy = getattr(capture_result_schedule, "queue_policy", "strict")
-
-    latency = getattr(capture_result_schedule, "schedule_latency", None)
-    if latency is None:
-        latency = getattr(capture_result_schedule, "ScheduleLatency", 0.0)
-
-    num_circuits = getattr(capture_result_schedule, "num_circuits", None)
-    if num_circuits is None:
-        num_circuits = getattr(capture_result_schedule, "numCircuits", 0)
-
-    circ_type = getattr(capture_result_schedule, "name_circuits", "") or getattr(
-        capture_result_schedule, "nameCircuits", "N/A"
-    )
-
-    avg_qubits = getattr(capture_result_schedule, "average_qubits", None)
-    if avg_qubits is None:
-        avg_qubits = getattr(capture_result_schedule, "averageQubits", 0.0)
-
-    machines = getattr(capture_result_schedule, "name_machines", None)
-    if machines is None:
-        machines = getattr(capture_result_schedule, "nameMachines", [])
+    algo = capture_result_schedule.name_schedule or "Unknown"
+    exceed_policy = capture_result_schedule.exceed_cutting_policy
+    opt_cutting = capture_result_schedule.optional_cutting
+    opt_policy = capture_result_schedule.optional_cutting_policy or "half"
+    queue_policy = capture_result_schedule.queue_policy
+    latency = capture_result_schedule.schedule_latency
+    num_circuits = capture_result_schedule.num_circuits
+    circ_type = capture_result_schedule.name_circuits or "N/A"
+    avg_qubits = capture_result_schedule.average_qubits
+    machines = capture_result_schedule.name_machines
 
     if isinstance(machines, list):
         machines_str = ", ".join(machines)

@@ -8,9 +8,9 @@ A discrete-event simulation platform for quantum circuit scheduling on heterogen
 
 - **Discrete-Event Simulation**: Min-heap event timeline modeling job arrivals, compilation, switching overhead, and QPU execution.
 - **Quantum Multi-Programming**: Spatial co-location of independent circuits onto larger QPUs to maximize space-time qubit utilization.
-- **Circuit Cutting (QPD)**: Automatic partitioning of oversized circuits, joint co-execution, and FWHT-based probability reconstruction.
+- **Circuit Cutting (QPD)**: Automatic partitioning of oversized circuits, joint co-execution, and probability reconstruction from Z-basis expectation values.
 - **Hardware Noise Modeling**: Realistic noise simulation using IBM fake backends (`FakeManila`, `FakeSherbrooke`, etc.) via Qiskit Aer.
-- **Extensible Architecture**: Central registry (`@register_algorithm`) for plugging in custom scheduling algorithms without modifying core engine code.
+- **Extensible Architecture**: Central registry (`@register_algorithm`, one exact name per algorithm) for plugging in custom scheduling algorithms without modifying core engine code.
 
 ---
 
@@ -43,6 +43,7 @@ pip install -e .
 - **Analyze Existing CSV Results**:
   ```bash
   python compare_results.py results/<filename>.csv
+  # Refuses rows from different setups unless you pass --allow-incompatible
   ```
 
 ---
@@ -62,7 +63,7 @@ pip install -e .
 │   ├── simulator/           # Dynamic IBM fake backend loader
 │   ├── utils/               # Timing estimation, fidelity (Hellinger, TVD), Gantt chart generator
 │   └── analysis/            # Benchmark metrics, comparison report & chart generators
-├── tests/                   # Pytest test suite (46 tests)
+├── tests/                   # Pytest test suite
 ├── run_simulation.py        # CLI for single-algorithm execution
 ├── run_batch.py             # Batch benchmark runner
 └── compare_results.py       # Standalone report & chart generation CLI

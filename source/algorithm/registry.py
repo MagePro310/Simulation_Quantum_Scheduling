@@ -7,10 +7,8 @@ from typing import Any, Type
 _REGISTRY: dict[str, Type] = {}
 
 
-def register_algorithm(*names: str):
-    """Decorator to register a scheduling algorithm class under one or more names.
-
-    Names are registered case-insensitively.
+def register_algorithm(name: str):
+    """Decorator to register a scheduling algorithm class under exactly one name.
 
     Example:
         @register_algorithm("FFD")
@@ -20,14 +18,7 @@ def register_algorithm(*names: str):
     """
 
     def decorator(cls: Type) -> Type:
-        # Register class name automatically
-        _REGISTRY[cls.__name__] = cls
-        _REGISTRY[cls.__name__.lower()] = cls
-
-        for name in names:
-            clean = name.strip()
-            _REGISTRY[clean] = cls
-            _REGISTRY[clean.lower()] = cls
+        _REGISTRY[name] = cls
         return cls
 
     return decorator
@@ -53,11 +44,8 @@ def get_algorithm(name_or_instance: str | Any, **kwargs) -> Any:
     # Ensure heuristics are loaded
     import source.algorithm.heuristic  # noqa: F401
 
-    key = name_or_instance.strip()
-    if key in _REGISTRY:
-        return _REGISTRY[key](**kwargs)
-    if key.lower() in _REGISTRY:
-        return _REGISTRY[key.lower()](**kwargs)
+    if name_or_instance in _REGISTRY:
+        return _REGISTRY[name_or_instance](**kwargs)
 
     raise KeyError(
         f"Unknown scheduling algorithm '{name_or_instance}'. "
@@ -66,8 +54,8 @@ def get_algorithm(name_or_instance: str | Any, **kwargs) -> Any:
 
 
 def list_algorithms() -> list[str]:
-    """Return sorted unique list of primary registered algorithm names."""
+    """Return the sorted registered algorithm names."""
     # Ensure heuristics are loaded
     import source.algorithm.heuristic  # noqa: F401
 
-    return sorted(list({cls.__name__ for cls in _REGISTRY.values()}))
+    return sorted(_REGISTRY)

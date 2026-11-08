@@ -1,0 +1,12 @@
+/.github
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Local agent docs
+AGENTS.md
+CLAUDE.md
+
+# Generated outputs. Results already in git stay tracked; use `git add -f` to keep a new one.
+results/

@@ -1,12 +1,11 @@
-# Core dependencies for Simulation_Quantum_Scheduling
-# Verified with Python 3.12 (conda env "scquan")
+# Exact versions verified with a clean install on Python 3.12: `pip check` is clean and the tests pass.
 matplotlib==3.10.8
 mqt.bench==2.1.0
 numpy==2.4.1
 pytest==8.4.2
 pyyaml==6.0.2
 qiskit==2.3.0
-qiskit-addon-cutting==0.9.0
+qiskit-addon-cutting==0.10.0
 qiskit-aer==0.17.2
 qiskit-ibm-runtime==0.45.0
 scipy==1.15.3

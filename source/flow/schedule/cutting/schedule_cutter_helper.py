@@ -73,25 +73,29 @@ class SchedulingCutterHelper:
     def calculate_cluster_sizes(
         num_qubits: int,
         target_qubits: int,
-        mode: str = "balanced",
+        mode: str = "half",
     ) -> List[int]:
         """Calculate desired cluster sizes for cutting a circuit.
 
         Args:
             num_qubits: Total number of qubits in the circuit.
             target_qubits: Upper bound or target capacity for each subcircuit.
-            mode: 'balanced' (divides into balanced halves/pieces) or 'greedy' (packs target_qubits first).
+            mode: 'half' (equal-sized pieces, e.g. 12 qubits at target 5 gives [4, 4, 4]) or
+                  'greedy' (packs target_qubits first, e.g. [5, 5, 2]).
 
         Returns:
             List of integers representing the qubit sizes of each subcircuit.
         """
+        if mode not in {"half", "greedy"}:
+            raise ValueError(f"Unknown cutting mode '{mode}'. Available modes: 'half', 'greedy'.")
+
         if num_qubits <= target_qubits:
             # When cutting a circuit that already fits within target_qubits:
             # Default to splitting into two balanced halves
             half = math.ceil(num_qubits / 2)
             return [half, num_qubits - half]
 
-        if mode.lower() == "greedy":
+        if mode == "greedy":
             sizes = []
             remaining = num_qubits
             while remaining > target_qubits:
@@ -101,7 +105,7 @@ class SchedulingCutterHelper:
                 sizes.append(remaining)
             return sizes
 
-        # Balanced (default):
+        # Half (default): equal-sized pieces
         num_parts = math.ceil(num_qubits / target_qubits)
         base = num_qubits // num_parts
         remainder = num_qubits % num_parts

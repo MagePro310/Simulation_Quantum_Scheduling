@@ -16,6 +16,7 @@ import numpy as np
 from scipy.optimize import Bounds, LinearConstraint, milp
 from scipy.sparse import coo_matrix
 
+from source.algorithm.common import merge_dependencies
 from source.models.job import JobInfo, SchedulerJobInfo
 from source.models.machine import MachineCharacteristic
 from source.algorithm.registry import register_algorithm
@@ -643,7 +644,7 @@ class QGroup:
             machine_name = bin_obj.machine_name
 
             for job in bin_obj.jobs.values():
-                dependencies = self._merge_dependencies(
+                dependencies = merge_dependencies(
                     job.depends_on or [], previous_bin_jobs[machine_name]
                 )
                 job.assigned_machine = machine_name
@@ -655,18 +656,3 @@ class QGroup:
                 for job in bin_obj.jobs.values()
                 if job.job_information is not None
             ]
-
-    @staticmethod
-    def _merge_dependencies(
-        existing_dependencies: list[JobInfo | None],
-        previous_bin_jobs: list[JobInfo],
-    ) -> list[JobInfo | None]:
-        """Merge and deduplicate dependencies."""
-        dependencies: list[JobInfo | None] = []
-        seen_ids: set[int] = set()
-        for dependency in existing_dependencies + previous_bin_jobs:
-            dependency_id = id(dependency)
-            if dependency_id not in seen_ids:
-                dependencies.append(dependency)
-                seen_ids.add(dependency_id)
-        return dependencies

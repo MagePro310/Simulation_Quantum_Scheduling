@@ -50,9 +50,7 @@ class ExecutionResult:
     distribution_no_noise: dict[str, int] | None = None
     distribution_with_noise: dict[str, int] | None = None
     fidelity: float | None = None
-    hellinger_fidelity: float | None = None
     tvd: float | None = None
-    bhattacharyya_fidelity: float | None = None
     uncut_distribution: dict[str, int] | None = None
     reconstructed_distribution: dict[str, int] | None = None
     cutting_overhead: float = 0.0

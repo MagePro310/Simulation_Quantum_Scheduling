@@ -14,6 +14,7 @@ class CircuitReconstructor:
     def reconstruct_distribution(
         cutting_context,
         shots: int = 8192,
+        seed: int = 0,
     ) -> tuple[dict[str, int], dict[str, int], float, float, float]:
         """Reconstruct the full circuit bitstring distribution and compare with uncut baseline.
 
@@ -38,7 +39,7 @@ class CircuitReconstructor:
         all_z_strings = cutting_context.all_z_strings
         bitstrings = [bin(i)[2:].zfill(num_qubits) for i in range(2**num_qubits)]
 
-        # 2. Fast Walsh-Hadamard Transform to compute probabilities P(x)
+        # 2. Inverse Walsh-Hadamard sum, computed directly in O(4^n), to get probabilities P(x)
         probs = []
         for x_int in range(2**num_qubits):
             x_bits = [(x_int >> ((num_qubits - 1) - i)) & 1 for i in range(num_qubits)]
@@ -63,7 +64,7 @@ class CircuitReconstructor:
         # 3. Execute uncut circuit baseline on AerSimulator
         qc_uncut = cutting_context.clean_circuit.copy()
         qc_uncut.measure_all()
-        uncut_job = AerSimulator().run(qc_uncut, shots=shots)
+        uncut_job = AerSimulator().run(qc_uncut, shots=shots, seed_simulator=seed)
         uncut_counts = dict(uncut_job.result().get_counts())
 
         # 4. Metrics

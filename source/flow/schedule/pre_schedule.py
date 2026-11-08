@@ -67,11 +67,10 @@ class PreSchedulePhase:
             if self._is_oversized(job_info, max_capacity):
                 num_qubits = job_info.num_qubits or (job_info.circuit.num_qubits if job_info.circuit else 0)
                 # Calculate cluster sizes outside and pass desired qubit cluster sizes into cutting tool
-                mode = "half" if self.exceed_cutting_policy == "half" else "greedy"
                 cluster_sizes = SchedulingCutterHelper.calculate_cluster_sizes(
                     num_qubits=num_qubits,
                     target_qubits=max_capacity,
-                    mode=mode,
+                    mode=self.exceed_cutting_policy,
                 )
                 sub_jobs = SchedulingCutterHelper.cut_job(job_info, cluster_sizes=cluster_sizes)
                 scheduler_job.update(sub_jobs)

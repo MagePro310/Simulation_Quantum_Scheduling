@@ -93,8 +93,6 @@ def test_execution_phase_calculates_hellinger_fidelity():
     assert res.status == "SUCCEEDED"
     assert res.fidelity is not None
     assert 0.0 <= res.fidelity <= 1.0
-    assert res.hellinger_fidelity == res.fidelity
-    assert res.bhattacharyya_fidelity == res.fidelity
     assert res.tvd is not None
     assert 0.0 <= res.tvd <= 1.0
 

@@ -40,7 +40,7 @@ def check_compatibility(results: list[dict[str, Any]]) -> tuple[bool, list[str]]
 
     if len(results) < 2:
         warnings.append("Less than 2 results found in CSV")
-        return (False, warnings)
+        return (True, warnings)
 
     # Check workload fingerprints
     fingerprints = {
@@ -83,7 +83,7 @@ def check_compatibility(results: list[dict[str, Any]]) -> tuple[bool, list[str]]
     if len(cutting_policies) > 1:
         warnings.append(f"Different cutting policies used: {cutting_policies}")
 
-    return (True, warnings)
+    return (not warnings, warnings)
 
 
 def generate_markdown_report(
@@ -325,8 +325,12 @@ def generate_markdown_report(
         f.write("![Machine Utilization](machine_utilization.png)\n\n")
 
 
-def run_comparison(csv_path: Path | str) -> Path:
-    """Run batch results comparison, generating markdown report and charts."""
+def run_comparison(csv_path: Path | str, allow_incompatible: bool = False) -> Path:
+    """Run batch results comparison, generating markdown report and charts.
+
+    Raises:
+        ValueError: If rows come from different setups and allow_incompatible is False.
+    """
     csv_file = Path(csv_path).expanduser()
     if not csv_file.is_absolute() and not csv_file.exists():
         csv_file = PROJECT_ROOT / csv_file
@@ -343,11 +347,16 @@ def run_comparison(csv_path: Path | str) -> Path:
     results = load_batch_results(csv_file)
     print(f"  Loaded {len(results)} result rows")
 
-    _is_compatible, warnings = check_compatibility(results)
+    is_compatible, warnings = check_compatibility(results)
     if warnings:
         print("\nCompatibility warnings:")
         for warning in warnings:
             print(f"  ⚠️  {warning}")
+    if not is_compatible and not allow_incompatible:
+        raise ValueError(
+            "Results come from different setups and can't be compared: "
+            + "; ".join(warnings)
+        )
 
     report_path = analysis_dir / "comparison_report.md"
     print(f"\nGenerating report: {report_path}")

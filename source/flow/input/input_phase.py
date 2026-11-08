@@ -62,7 +62,7 @@ class InputPhase:
                     arrival_time = float(job_spec[2]) if len(job_spec) > 2 else 0.0
                     priority = int(job_spec[3]) if len(job_spec) > 3 else 1
                 elif isinstance(job_spec, dict):
-                    num_qubits = int(job_spec.get("qubits") or job_spec.get("num_qubits", 2))
+                    num_qubits = int(job_spec.get("qubits", 2))
                     shots = int(job_spec.get("shots", 1024))
                     arrival_time = float(job_spec.get("arrival_time", 0.0))
                     priority = int(job_spec.get("priority", 1))

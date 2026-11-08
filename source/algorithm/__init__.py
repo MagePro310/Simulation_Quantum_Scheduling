@@ -5,7 +5,7 @@ and heuristic implementations (FFD, FFD_v2, Adaptive_FFD, LPT, QGroup).
 """
 
 from source.algorithm.common import estimate_job_duration, merge_dependencies
-from source.algorithm.heuristic.adaptive_ffd import Adaptive_FFD, AdaptiveFFD, FFD_v3
+from source.algorithm.heuristic.adaptive_ffd import Adaptive_FFD
 from source.algorithm.heuristic.ffd import FFD, FFDBin
 from source.algorithm.heuristic.ffd_v2 import FFD_v2
 from source.algorithm.heuristic.lpt import LPT, LPTMachine
@@ -26,8 +26,6 @@ __all__ = [
     "FFDBin",
     "FFD_v2",
     "Adaptive_FFD",
-    "AdaptiveFFD",
-    "FFD_v3",
     "LPT",
     "LPTMachine",
     "QGroup",

@@ -9,7 +9,7 @@ from source.models.job import JobInfo, SchedulerJobInfo
 from source.models.machine import MachineCharacteristic
 from source.models.schedule_result import ResultOfSchedule
 from source.simulator import FakeBelemV2, FakeBogotaV2
-from source.flow.schedule.cutting import GreedyCircuitCutter, CircuitCutter, SchedulingCutterHelper
+from source.flow.schedule.cutting import CircuitCutter, SchedulingCutterHelper
 from source.flow.schedule.pre_schedule import PreSchedulePhase
 from source.flow.schedule.schedule_phase import SchedulePhase
 from source.algorithm.heuristic.ffd import FFD
@@ -17,53 +17,12 @@ from source.algorithm.heuristic.ffd_v2 import FFD_v2
 from source.algorithm.heuristic.adaptive_ffd import Adaptive_FFD
 
 
-def test_greedy_partition_labels():
-    cutter = GreedyCircuitCutter()
-    # 7 qubits on 5-qubit machine -> 5 on A, 2 on B
-    labels = cutter.get_greedy_partition_labels(7, 5)
-    assert labels == ["A", "A", "A", "A", "A", "B", "B"]
-    assert labels.count("A") == 5
-    assert labels.count("B") == 2
-
-    # 12 qubits on 5-qubit machine -> 5 on A, 5 on B, 2 on C
-    labels_12 = cutter.get_greedy_partition_labels(12, 5)
-    assert labels_12 == ["A"] * 5 + ["B"] * 5 + ["C"] * 2
-
-    # Fits directly: 4 qubits on 5-qubit machine
-    labels_4 = cutter.get_greedy_partition_labels(4, 5)
-    assert labels_4 == ["A"] * 4
-
-
-def test_half_partition_labels():
-    cutter = GreedyCircuitCutter()
-    # 7 qubits on 5-qubit machine -> split into halves: [4, 3] -> 4 on A, 3 on B
-    labels = cutter.get_half_partition_labels(7, 5)
-    assert labels == ["A", "A", "A", "A", "B", "B", "B"]
-    assert labels.count("A") == 4
-    assert labels.count("B") == 3
-
-    # 12 qubits on 5-qubit machine -> split into halves: 12 -> 6, 6 -> 3, 3, 3, 3
-    labels_12 = cutter.get_half_partition_labels(12, 5)
-    assert labels_12 == ["A"] * 3 + ["B"] * 3 + ["C"] * 3 + ["D"] * 3
-
-    # Fits directly: 4 qubits on 5-qubit machine
-    labels_4 = cutter.get_half_partition_labels(4, 5)
-    assert labels_4 == ["A"] * 4
-
-
-def test_can_fit():
-    cutter = GreedyCircuitCutter()
-    assert not cutter.can_fit(7, 5)
-    assert cutter.can_fit(5, 5)
-    assert cutter.can_fit(3, 5)
-
-
 def test_circuit_cutter_decomposition():
-    cutter = GreedyCircuitCutter()
+    cutter = CircuitCutter()
     qc = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=7)
     parent_job = JobInfo(job_name="job_test_7q", circuit=qc, num_qubits=7, shots=1024)
 
-    children = cutter.cut_circuit(parent_job, max_capacity=5)
+    children = cutter.cut_by_partition_sizes(parent_job, partition_sizes=[5, 2])
 
     assert len(children) == 2
     assert "job_test_7q_sub_A" in children
@@ -81,30 +40,6 @@ def test_circuit_cutter_decomposition():
     assert parent_job.cutting_overhead == 9.0
     assert child_A.cutting_overhead == 9.0
     assert child_B.cutting_overhead == 9.0
-
-
-def test_circuit_cutter_half_decomposition():
-    cutter = GreedyCircuitCutter()
-    qc = get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=7)
-    parent_job = JobInfo(job_name="job_test_7q_half", circuit=qc, num_qubits=7, shots=1024)
-
-    children = cutter.cut_circuit(parent_job, max_capacity=5, policy="half")
-
-    assert len(children) == 2
-    assert "job_test_7q_half_sub_A" in children
-    assert "job_test_7q_half_sub_B" in children
-
-    child_A = children["job_test_7q_half_sub_A"]
-    child_B = children["job_test_7q_half_sub_B"]
-
-    # Half cut splits 7 qubits into [4, 3]
-    assert child_A.num_qubits == 4
-    assert child_B.num_qubits == 3
-    assert child_A.parent_job is parent_job
-    assert child_B.parent_job is parent_job
-    assert parent_job.children_jobs == children
-    assert parent_job.cutting_context is not None
-    assert parent_job.cutting_context.policy == "half"
 
 
 def test_pre_schedule_phase_integration():
@@ -160,18 +95,6 @@ def test_pre_schedule_phase_half_policy():
     # Half cut policy yields 4 qubits and 3 qubits
     assert scheduled["job_large_sub_A"].job_information.num_qubits == 4
     assert scheduled["job_large_sub_B"].job_information.num_qubits == 3
-
-
-def test_half_partition_labels_force_cut():
-    cutter = GreedyCircuitCutter()
-    # Without force_cut, circuits <= 5 remain uncut
-    assert cutter.get_half_partition_labels(2, 5, force_cut=False) == ["A", "A"]
-    assert cutter.get_half_partition_labels(3, 5, force_cut=False) == ["A", "A", "A"]
-
-    # With force_cut=True, all circuits >= 2 are split in half
-    assert cutter.get_half_partition_labels(2, 5, force_cut=True) == ["A", "B"]
-    assert cutter.get_half_partition_labels(3, 5, force_cut=True) == ["A", "A", "B"]
-    assert cutter.get_half_partition_labels(4, 5, force_cut=True) == ["A", "A", "B", "B"]
 
 
 def test_pre_schedule_phase_set_policy_and_invariant():
@@ -311,57 +234,10 @@ def test_cutting_overhead_aggregation():
     assert summary.total_cutting_overhead == 111.0
 
 
-def test_modular_half_policy_helpers():
-    from source.flow.schedule.cutting.half_policy import HalfCuttingPolicy
-
-    policy = HalfCuttingPolicy()
-    assert policy.name == "half"
-
-    # Helper: _split_qubits_in_half
-    assert policy._split_qubits_in_half(7) == (4, 3)
-    assert policy._split_qubits_in_half(2) == (1, 1)
-    assert policy._split_qubits_in_half(3) == (2, 1)
-
-    # Helper: calculate_subcircuit_sizes
-    assert policy.calculate_subcircuit_sizes(7, 5) == [4, 3]
-    assert policy.calculate_subcircuit_sizes(12, 5) == [3, 3, 3, 3]
-    assert policy.calculate_subcircuit_sizes(3, 5, force_cut=False) == [3]
-    assert policy.calculate_subcircuit_sizes(3, 5, force_cut=True) == [2, 1]
-
-    # Helper: convert_sizes_to_labels
-    assert policy.convert_sizes_to_labels([4, 3]) == ["A", "A", "A", "A", "B", "B", "B"]
-    assert policy.convert_sizes_to_labels([1, 1]) == ["A", "B"]
-
-
-def test_modular_greedy_policy_helpers():
-    from source.flow.schedule.cutting.greedy_policy import GreedyCuttingPolicy
-
-    policy = GreedyCuttingPolicy()
-    assert policy.name == "greedy"
-
-    # Helper: calculate_greedy_sizes
-    assert policy.calculate_greedy_sizes(7, 5) == [5, 2]
-    assert policy.calculate_greedy_sizes(12, 5) == [5, 5, 2]
-    assert policy.calculate_greedy_sizes(4, 5) == [4]
-
-    # get_partition_labels
-    assert policy.get_partition_labels(7, 5) == ["A"] * 5 + ["B"] * 2
-
-
 def test_cutter_pipeline_helpers():
     from qiskit import QuantumCircuit
-    from source.flow.schedule.cutting.cutter_pipeline import CircuitCutter, get_cutting_policy
-    from source.flow.schedule.cutting.greedy_policy import GreedyCuttingPolicy
-    from source.flow.schedule.cutting.half_policy import HalfCuttingPolicy
 
     cutter = CircuitCutter()
-
-    # _resolve_policy & get_cutting_policy
-    assert isinstance(cutter._resolve_policy("greedy"), GreedyCuttingPolicy)
-    assert isinstance(cutter._resolve_policy("half"), HalfCuttingPolicy)
-    assert isinstance(cutter._resolve_policy(GreedyCuttingPolicy()), GreedyCuttingPolicy)
-    assert isinstance(get_cutting_policy("greedy"), GreedyCuttingPolicy)
-    assert isinstance(get_cutting_policy("half"), HalfCuttingPolicy)
 
     # _prepare_clean_circuit
     qc = QuantumCircuit(2, 2)
@@ -520,16 +396,19 @@ def test_scheduling_cutter_helper_can_cut():
 
 
 def test_scheduling_cutter_helper_calculate_cluster_sizes():
-    """Verify calculation of cluster sizes for balanced and greedy modes."""
-    # Balanced mode
-    assert SchedulingCutterHelper.calculate_cluster_sizes(7, 5, mode="balanced") == [4, 3]
-    assert SchedulingCutterHelper.calculate_cluster_sizes(12, 5, mode="balanced") == [4, 4, 4]
-    assert SchedulingCutterHelper.calculate_cluster_sizes(4, 5, mode="balanced") == [2, 2]
+    """Verify calculation of cluster sizes for half and greedy modes."""
+    # Half mode
+    assert SchedulingCutterHelper.calculate_cluster_sizes(7, 5, mode="half") == [4, 3]
+    assert SchedulingCutterHelper.calculate_cluster_sizes(12, 5, mode="half") == [4, 4, 4]
+    assert SchedulingCutterHelper.calculate_cluster_sizes(4, 5, mode="half") == [2, 2]
 
     # Greedy mode
     assert SchedulingCutterHelper.calculate_cluster_sizes(7, 5, mode="greedy") == [5, 2]
     assert SchedulingCutterHelper.calculate_cluster_sizes(12, 5, mode="greedy") == [5, 5, 2]
     assert SchedulingCutterHelper.calculate_cluster_sizes(4, 5, mode="greedy") == [2, 2]
+
+    with pytest.raises(ValueError, match="Unknown cutting mode"):
+        SchedulingCutterHelper.calculate_cluster_sizes(7, 5, mode="balanced")
 
 
 def test_circuit_cutter_cut_by_partition_sizes():
@@ -690,8 +569,3 @@ def test_adaptive_ffd_no_unnecessary_cuts():
     assert "j1" in scheduled
     assert "j2" in scheduled
     assert capture.optional_cutting is False
-
-
-
-
-

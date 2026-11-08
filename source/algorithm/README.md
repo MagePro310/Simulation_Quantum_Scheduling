@@ -1,20 +1,20 @@
 # Algorithm Developer Guide
 
-The [`source/algorithm/`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/) directory hosts scheduling algorithms for the quantum simulation platform.
+The [`source/algorithm/`](.) directory hosts scheduling algorithms for the quantum simulation platform.
 
 ---
 
 ## 1. Directory Overview
 
-- [`interfaces.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/interfaces.py): `ScheduleAlgorithmProtocol` defining the `execute(scheduler_job, machines)` interface (PEP 544).
-- [`registry.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/registry.py): Central registry with `@register_algorithm`, `get_algorithm(name)`, and `list_algorithms()`.
-- [`common.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/common.py): Helper functions for sorting and cluster capacity analysis.
+- [`interfaces.py`](interfaces.py): `ScheduleAlgorithmProtocol` defining the `execute(scheduler_job, machines)` interface (PEP 544).
+- [`registry.py`](registry.py): Central registry with `@register_algorithm` (one exact, case-sensitive name per algorithm), `get_algorithm(name)`, and `list_algorithms()`.
+- [`common.py`](common.py): Helper functions for sorting and cluster capacity analysis.
 - `heuristic/`: Built-in implementations:
-  - [`ffd.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/heuristic/ffd.py): First Fit Decreasing.
-  - [`ffd_v2.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/heuristic/ffd_v2.py): FFD with pre-sort circuit cutting.
-  - [`adaptive_ffd.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/heuristic/adaptive_ffd.py): Adaptive FFD (on-the-fly slack cutting).
-  - [`lpt.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/heuristic/lpt.py): Longest Processing Time first.
-  - [`qgroup.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/algorithm/heuristic/qgroup.py): QGroup (Clustering + MILP, IEEE QCE 2024).
+  - [`ffd.py`](heuristic/ffd.py): First Fit Decreasing.
+  - [`ffd_v2.py`](heuristic/ffd_v2.py): FFD with pre-sort circuit cutting.
+  - [`adaptive_ffd.py`](heuristic/adaptive_ffd.py): Adaptive FFD (on-the-fly slack cutting).
+  - [`lpt.py`](heuristic/lpt.py): Longest Processing Time first.
+  - [`qgroup.py`](heuristic/qgroup.py): QGroup (Clustering + MILP, IEEE QCE 2024).
 
 ---
 
@@ -58,13 +58,13 @@ __all__ = [..., "MyAlgo"]
   python run_simulation.py -a MyAlgo
   ```
 - **Batch Benchmark**:
-  Add `"MyAlgo"` to the `ALGORITHMS` list in [`run_batch.py`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/run_batch.py).
+  Add `"MyAlgo"` to `batch.algorithms` in your YAML config (for example [`configs/default_batch.yaml`](../../configs/default_batch.yaml)).
 
 ---
 
 ## 3. Circuit Cutting Helper
 
-Use [`SchedulingCutterHelper`](file:///home/trieu/D/Quantum_Repo/Simulation_Quantum_Scheduling/source/flow/schedule/cutting/schedule_cutter_helper.py) within your algorithm for on-demand circuit partitioning:
+Use [`SchedulingCutterHelper`](../flow/schedule/cutting/schedule_cutter_helper.py) within your algorithm for on-demand circuit partitioning:
 
 ```python
 from source.flow.schedule.cutting.schedule_cutter_helper import SchedulingCutterHelper

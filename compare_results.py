@@ -29,10 +29,15 @@ def main() -> int:
         type=Path,
         help="Path to batch results CSV file",
     )
+    parser.add_argument(
+        "--allow-incompatible",
+        action="store_true",
+        help="Generate the report even if rows come from different setups",
+    )
     args = parser.parse_args()
 
     try:
-        run_comparison(args.csv_file)
+        run_comparison(args.csv_file, allow_incompatible=args.allow_incompatible)
         return 0
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)

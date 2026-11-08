@@ -23,19 +23,20 @@ def test_registry_lists_all_built_in_algorithms():
     assert "QGroup" in algorithms
 
 
-def test_get_algorithm_case_insensitive():
-    """Verify algorithms can be instantiated by name case-insensitively."""
-    ffd_upper = get_algorithm("FFD")
-    ffd_lower = get_algorithm("ffd")
-    assert type(ffd_upper).__name__ == "FFD"
-    assert type(ffd_lower).__name__ == "FFD"
+def test_get_algorithm_requires_exact_name():
+    """Verify each algorithm has one name: no lowercase forms or aliases."""
+    assert type(get_algorithm("FFD")).__name__ == "FFD"
+    assert type(get_algorithm("Adaptive_FFD")).__name__ == "Adaptive_FFD"
 
-    lpt = get_algorithm("lpt")
-    assert type(lpt).__name__ == "LPT"
+    for other_name in ("ffd", "lpt", "AdaptiveFFD", "FFD_v3", "adaptive_ffd"):
+        with pytest.raises(KeyError, match="Unknown scheduling algorithm"):
+            get_algorithm(other_name)
 
-    qgroup = get_algorithm("QGroup")
-    assert type(qgroup).__name__ == "QGroup"
 
+def test_registry_lists_only_primary_names():
+    built_in = {"FFD", "FFD_v2", "Adaptive_FFD", "LPT", "QGroup"}
+    assert built_in <= set(list_algorithms())
+    assert not {"AdaptiveFFD", "FFD_v3", "ffd", "lpt"} & set(list_algorithms())
 
 def test_get_algorithm_unknown_raises():
     """Verify attempting to get an unregistered algorithm raises KeyError."""

@@ -27,7 +27,7 @@ scheduling:
 # 4. Execution & Simulator Parameters
 execution:
   seed: 0                   # Random seed for transpiler and simulation reproducibility
-  queue_policy: "strict"    # 'strict' (FIFO queue), 'relaxed', or 'backfill'
+  queue_policy: "strict"    # 'strict' (FIFO queue) or 'backfill'
   timeout: 600              # Timeout in seconds per algorithm
 
 # 5. Batch Runner & Automated Comparison Configuration

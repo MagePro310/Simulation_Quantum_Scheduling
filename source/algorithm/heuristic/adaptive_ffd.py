@@ -1,4 +1,4 @@
-"""Adaptive First Fit Decreasing (Adaptive_FFD / FFD_v3).
+"""Adaptive First Fit Decreasing (Adaptive_FFD).
 
 Implements on-the-fly, slack-driven circuit cutting:
 - Circuits are kept uncut whenever they fit naturally into open bins.
@@ -14,7 +14,7 @@ from source.models.machine import MachineCharacteristic
 from source.flow.schedule.cutting.schedule_cutter_helper import SchedulingCutterHelper
 
 
-@register_algorithm("Adaptive_FFD", "AdaptiveFFD", "FFD_v3")
+@register_algorithm("Adaptive_FFD")
 class Adaptive_FFD(FFD):
     """Adaptive First Fit Decreasing: On-the-fly slack-driven circuit cutting.
 
@@ -172,11 +172,3 @@ class Adaptive_FFD(FFD):
 
         all_bins = full_bins + open_bins
         return all_bins, current_jobs
-
-
-# Aliases for convenience
-AdaptiveFFD = Adaptive_FFD
-FFD_v3 = Adaptive_FFD
-
-FFD_v3 = Adaptive_FFD
-

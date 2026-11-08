@@ -3,6 +3,7 @@
 import heapq
 import math
 from dataclasses import dataclass
+from pathlib import Path
 
 from source.models.execution import BatchCompletion
 from source.models.job import ExecutionResult, SchedulerJobInfo
@@ -20,6 +21,8 @@ from source.flow.execution.job_dispatcher import JobDispatcher
 from source.flow.execution.metrics_calculator import MetricsCalculator
 from source.flow.execution.reconstruction_handler import ReconstructionHandler
 from source.flow.execution.timeline_reporter import ConsoleTimelineReporter
+
+DEFAULT_CHART_DIR = Path(__file__).resolve().parents[3] / "results" / "charts"
 
 
 @dataclass
@@ -64,9 +67,6 @@ class ExecutionPhase:
         )
         self.reconstruction_handler = reconstruction_handler or ReconstructionHandler()
 
-        # Expose sub-components for backward compatibility
-        self.circuit_composer = self.batch_executor.circuit_composer
-        self.quantum_runner = self.batch_executor.quantum_runner
         self.execution_summary = ExecutionSummary()
 
     def execute(
@@ -91,7 +91,7 @@ class ExecutionPhase:
 
         while self._has_unfinished_jobs(results):
             # 1. Process completed batches
-            self._complete_finished_batches(now, events, machine_states, results)
+            self._complete_finished_batches(now, events, machine_states, results, seed)
 
             # 2. Block jobs with failed dependencies
             self.job_dispatcher.block_failed_dependents(scheduler_job, results)
@@ -111,6 +111,9 @@ class ExecutionPhase:
 
             # 5. Advance clock to next event
             now = self._next_event_time(now, events, scheduler_job, results, queue_policy)
+
+        # Cut jobs that never reconstructed still need a result of their own
+        self.reconstruction_handler.finalize_unreconstructed_parents(results)
 
         # Finalize metrics and visualization
         MetricsCalculator.calculate_metrics(self.execution_summary, results, machines, now)
@@ -162,7 +165,7 @@ class ExecutionPhase:
 
         return False
 
-    def _complete_finished_batches(self, now, events, machine_states, results) -> None:
+    def _complete_finished_batches(self, now, events, machine_states, results, seed) -> None:
         """Process all batches that completed by current time."""
         while events and events[0][0] <= now:
             _, _, completion = heapq.heappop(events)
@@ -171,7 +174,7 @@ class ExecutionPhase:
             completion.batch_record.status = "FAILED" if completion.error else "SUCCEEDED"
             completion.batch_record.error_reason = completion.error
 
-            state.active = self.reconstruction_handler.update_job_results(completion, results)
+            state.active = self.reconstruction_handler.update_job_results(completion, results, seed=seed)
             state.busy = False
 
             for job_name in completion.batch_record.job_ids:
@@ -242,11 +245,9 @@ class ExecutionPhase:
 
     def _generate_gantt_safely(self, capture_result_schedule, gantt_output_path, results, machines) -> None:
         """Generate Gantt chart visualization safely without interrupting execution flow."""
-        algo_name = getattr(capture_result_schedule, "name_schedule", "") or getattr(capture_result_schedule, "nameSchedule", "Schedule") if capture_result_schedule else "Schedule"
+        algo_name = (capture_result_schedule.name_schedule or "Schedule") if capture_result_schedule else "Schedule"
         if not gantt_output_path:
-            from pathlib import Path
-            project_root = Path(__file__).resolve().parents[3]
-            gantt_output_path = project_root / "results" / "charts" / f"{algo_name}_gantt.png"
+            gantt_output_path = DEFAULT_CHART_DIR / f"{algo_name}_gantt.png"
 
         try:
             from source.utils.gantt_chart import GanttChart
@@ -254,21 +255,3 @@ class ExecutionPhase:
             gantt.display(results, machines, output_path=gantt_output_path, execution_summary=self.execution_summary)
         except Exception as err:
             print(f"Failed to generate Gantt chart: {err}")
-
-    # ========== Backward Compatibility Delegations ==========
-
-    def _select_jobs(self, *args, **kwargs):
-        """Delegate job selection to JobDispatcher for backward compatibility."""
-        return self.job_dispatcher.select_jobs(*args, **kwargs)
-
-    def _block_failed_dependents(self, *args, **kwargs):
-        """Delegate dependency blocking to JobDispatcher for backward compatibility."""
-        return self.job_dispatcher.block_failed_dependents(*args, **kwargs)
-
-    def _reconstruct_parent_job(self, *args, **kwargs):
-        """Delegate reconstruction to ReconstructionHandler for backward compatibility."""
-        return self.reconstruction_handler.reconstruct_parent_job(*args, **kwargs)
-
-    def _print_status(self, now, results, machine_states) -> None:
-        """Delegate timeline printing to reporter for backward compatibility."""
-        self.reporter.print_timeline_status(now, results, machine_states)

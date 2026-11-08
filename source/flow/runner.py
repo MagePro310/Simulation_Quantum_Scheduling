@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from source.algorithm.registry import get_algorithm
 from source.flow.execution.orchestrator import ExecutionPhase
@@ -13,6 +12,7 @@ from source.flow.input.input_phase import InputPhase
 from source.flow.schedule.schedule_phase import SchedulePhase
 from source.models.schedule_result import ResultOfSchedule
 from source.models.simulation_config import SimulationConfig
+from source.utils.provenance import git_commit, workload_fingerprint
 from source.utils.serialization import (
     print_schedule_result,
     serialize_result,
@@ -59,6 +59,13 @@ def run_pipeline(
 
     # 3. Create input circuits and quantum machines driven strictly by config
     input_job, machines_set = InputPhase(config=resolved_config).create_input(capture_result_schedule)
+    capture_result_schedule.workload_fingerprint = workload_fingerprint(
+        input_job,
+        resolved_config.workload.benchmark,
+        machines_set,
+    )
+    capture_result_schedule.git_commit = git_commit()
+    capture_result_schedule.config = resolved_config.to_dict()
 
     # 4. Schedule Phase:
     #    - Mandatory exceed cut: active for oversized circuits
@@ -88,36 +95,3 @@ def run_pipeline(
         print(f"\nJSON output written to: {json_output}")
 
     return result_data
-
-
-def run_cli(
-    algorithm_factory: Callable[[], Any] | str,
-    description: str = "Quantum scheduling algorithm",
-) -> None:
-    """Standardized CLI entry point for algorithm simulations."""
-    parser = argparse.ArgumentParser(description=description)
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=None,
-        help="Path to YAML/JSON simulation config file (default: configs/default_batch.yaml if present)",
-    )
-    parser.add_argument(
-        "--json-output",
-        type=Path,
-        help="Path to write structured JSON results",
-    )
-    parser.add_argument(
-        "--gantt-output",
-        type=Path,
-        help="Custom path to save Gantt chart PNG",
-    )
-    args = parser.parse_args()
-
-    algo = algorithm_factory() if callable(algorithm_factory) else algorithm_factory
-    run_pipeline(
-        algorithm=algo,
-        config=args.config,
-        json_output=args.json_output,
-        gantt_output_path=args.gantt_output,
-    )

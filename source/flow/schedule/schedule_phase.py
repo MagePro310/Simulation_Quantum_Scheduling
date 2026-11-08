@@ -77,13 +77,9 @@ class SchedulePhase:
 
         if hasattr(capture_result_schedule, "name_schedule"):
             capture_result_schedule.name_schedule = algo_name
-        if hasattr(capture_result_schedule, "nameSchedule"):
-            capture_result_schedule.nameSchedule = algo_name
 
         if hasattr(capture_result_schedule, "schedule_latency"):
             capture_result_schedule.schedule_latency = latency
-        if hasattr(capture_result_schedule, "ScheduleLatency"):
-            capture_result_schedule.ScheduleLatency = latency
 
         capture_result_schedule.exceed_cutting_policy = self.exceed_cutting_policy
 
@@ -92,7 +88,7 @@ class SchedulePhase:
         has_optional_cut = False
         for s_job in scheduler_job.values():
             info = getattr(s_job, "job_information", None)
-            parent = getattr(info, "parent_job", None) or getattr(info, "parentJob", None)
+            parent = getattr(info, "parent_job", None)
             if parent is not None:
                 parent_qubits = getattr(parent, "num_qubits", 0) or getattr(
                     getattr(parent, "circuit", None), "num_qubits", 0

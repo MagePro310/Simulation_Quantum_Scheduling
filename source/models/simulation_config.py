@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "default_batch.yaml"
 
 VALID_CUTTING_POLICIES = {"greedy", "half"}
-VALID_QUEUE_POLICIES = {"strict", "relaxed", "backfill"}
+VALID_QUEUE_POLICIES = {"strict", "backfill"}
 
 
 @dataclass
@@ -89,7 +89,7 @@ class ExecutionConfig:
     """Configuration for simulator execution, queue policy, and reproducibility."""
 
     seed: int = 0
-    queue_policy: str = "strict"  # 'strict', 'relaxed', or 'backfill'
+    queue_policy: str = "strict"  # 'strict' or 'backfill'
     timeout: int = 600
 
     def __post_init__(self) -> None:

@@ -123,7 +123,12 @@ class BatchExecutor:
                 pm_kwargs["initial_layout"] = initial_layout
 
             pass_manager = generate_preset_pass_manager(**pm_kwargs)
-            sampler = SamplerV2(mode=machine.quantum_machine)
+            # qiskit-ibm-runtime's local mode silently ignores a seed of 0, so never pass one
+            batch_seed = (seed + batch_id) % 2**32 or 1
+            sampler = SamplerV2(
+                mode=machine.quantum_machine,
+                options={"simulator": {"seed_simulator": batch_seed}},
+            )
 
             joint_circuits, reg_meta = self.circuit_composer.compose_joint_cutting_batch(jobs_dict)
             isa_composed = pass_manager.run(joint_circuits)
@@ -217,11 +222,14 @@ class BatchExecutor:
     ) -> tuple[BatchExecutionRecord, dict[str, BatchCounts] | None, str | None, PreparedBatch | None]:
         """Execute standard multi-programming composite batch."""
         if prepared_batch is None or prepared_batch.job_ids != batch_record.job_ids:
-            prepared_batch = self.circuit_composer.prepare_batch(
-                machine,
-                {name: scheduler_job[name].job_information for name in active_jobs},
-                seed=seed,
-            )
+            try:
+                prepared_batch = self.circuit_composer.prepare_batch(
+                    machine,
+                    {name: scheduler_job[name].job_information for name in active_jobs},
+                    seed=seed,
+                )
+            except Exception as e:
+                return batch_record, None, f"Batch {batch_id} preparation failed: {e}", None
 
         batch_record.end_time = now + float(prepared_batch.duration_per_shot) * batch_record.shots
 

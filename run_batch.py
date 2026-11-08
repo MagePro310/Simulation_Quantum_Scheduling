@@ -69,6 +69,8 @@ def create_csv_with_header(csv_path: Path) -> None:
         "seed",
         "queue_policy",
         "dependency_versions",
+        "git_commit",
+        "config_json",
     ]
 
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
@@ -97,14 +99,12 @@ def append_result_row(
         "end_timestamp": end_time,
         "process_status": status,
         "error_message": error_message or "",
-        "num_circuits": data.get("num_circuits") or data.get("numCircuits", ""),
-        "name_circuits": data.get("name_circuits") or data.get("nameCircuits", ""),
-        "average_qubits": data.get("average_qubits") or data.get("averageQubits", ""),
-        "name_machines": json.dumps(data.get("name_machines") or data.get("nameMachines", ""))
-        if ("name_machines" in data or "nameMachines" in data)
-        else "",
-        "name_schedule": data.get("name_schedule") or data.get("nameSchedule", ""),
-        "schedule_latency": data.get("schedule_latency") or data.get("ScheduleLatency", ""),
+        "num_circuits": data.get("num_circuits", ""),
+        "name_circuits": data.get("name_circuits", ""),
+        "average_qubits": data.get("average_qubits", ""),
+        "name_machines": json.dumps(data["name_machines"]) if "name_machines" in data else "",
+        "name_schedule": data.get("name_schedule", ""),
+        "schedule_latency": data.get("schedule_latency", ""),
         "makespan": exec_summary.get("makespan", ""),
         "average_turnaround_time": exec_summary.get("average_turnaround_time", ""),
         "average_waiting_time": exec_summary.get("average_waiting_time", ""),
@@ -126,6 +126,8 @@ def append_result_row(
         "dependency_versions": json.dumps(data.get("dependency_versions", {}))
         if "dependency_versions" in data
         else "",
+        "git_commit": data.get("git_commit", ""),
+        "config_json": json.dumps(data["config"]) if "config" in data else "",
     }
 
     with open(csv_path, "a", newline="", encoding="utf-8") as f:
@@ -177,6 +179,8 @@ def main() -> int:
     print(f"\nCreating batch results file: {csv_path}")
     create_csv_with_header(csv_path)
 
+    failed_algorithms: list[str] = []
+
     # Process Isolation: execute each algorithm in a dedicated worker process
     with ProcessPoolExecutor(max_workers=1) as executor:
         for run_index, algo_name in enumerate(algorithms_to_run, start=1):
@@ -198,6 +202,7 @@ def main() -> int:
             end_time = datetime.now(timezone.utc).isoformat()
             print(f"  Status: {status}")
             if error:
+                failed_algorithms.append(algo_name)
                 print(f"  Error: {error}")
 
             append_result_row(
@@ -227,6 +232,9 @@ def main() -> int:
         except Exception as e:
             print(f"Warning: Could not auto-generate comparison report: {e}", file=sys.stderr)
 
+    if failed_algorithms:
+        print(f"\nFailed algorithms: {', '.join(failed_algorithms)}", file=sys.stderr)
+        return 1
     return 0
 
 

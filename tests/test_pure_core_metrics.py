@@ -10,7 +10,7 @@ from source.models.job import JobInfo, ExecutionResult, SchedulerJobInfo
 from source.models.schedule_result import ExecutionSummary
 from source.models.execution import BatchExecutionRecord
 from source.flow.execution.metrics_calculator import MetricsCalculator
-from source.flow.execution.orchestrator import ExecutionPhase
+from source.flow.execution.job_dispatcher import JobDispatcher
 
 
 def test_qubit_weighted_fidelity_calculation():
@@ -103,8 +103,6 @@ def test_cluster_and_machine_qubit_utilization():
 
 def test_queue_policy_strict_vs_backfill_dispatch():
     """Verify strict stops on Head-of-Line blocking, whereas backfill skips to fit available capacity."""
-    orchestrator = ExecutionPhase()
-
     qc_large = QuantumCircuit(5)
     job_large = JobInfo(job_name="large", circuit=qc_large, num_qubits=5, arrival_time=0.0)
     sched_large = SchedulerJobInfo(job_information=job_large, assigned_machine="m1")
@@ -122,7 +120,7 @@ def test_queue_policy_strict_vs_backfill_dispatch():
     # Case 1: Machine capacity is 4. Queue has ["large" (5q), "small" (2q)].
     # Under strict policy: "large" exceeds 4 -> break! "small" is NOT selected.
     queue_strict = ["large", "small"]
-    active_strict = orchestrator._select_jobs(
+    active_strict = JobDispatcher.select_jobs(
         now=0.0, scheduler_job=scheduler_job, results=results,
         queue=queue_strict, active=[], capacity=4, policy="strict"
     )
@@ -131,7 +129,7 @@ def test_queue_policy_strict_vs_backfill_dispatch():
 
     # Case 2: Under backfill policy: "large" exceeds 4 -> continue! "small" (2q <= 4) is selected!
     queue_backfill = ["large", "small"]
-    active_backfill = orchestrator._select_jobs(
+    active_backfill = JobDispatcher.select_jobs(
         now=0.0, scheduler_job=scheduler_job, results=results,
         queue=queue_backfill, active=[], capacity=4, policy="backfill"
     )

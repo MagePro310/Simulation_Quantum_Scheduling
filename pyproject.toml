@@ -7,29 +7,29 @@ name = "simulation-quantum-scheduling"
 version = "0.1.0"
 description = "Simulation Quantum Scheduling Platform with Multi-Programming and Circuit Cutting"
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.12,<3.13"
 authors = [
     { name = "Quantum Scheduling Research Team" }
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
-    "matplotlib>=3.8.0",
+    "matplotlib>=3.10.8",
     "mqt.bench>=2.1.0",
-    "numpy>=1.26.0",
-    "pytest>=8.0.0",
-    "pyyaml>=6.0",
-    "qiskit>=1.3.0",
-    "qiskit-addon-cutting>=0.9.0",
-    "qiskit-aer>=0.15.0",
-    "qiskit-ibm-runtime>=0.30.0",
-    "scipy>=1.12.0",
+    "numpy>=2.4.1",
+    "pyyaml>=6.0.2",
+    "qiskit>=2.3.0,<3",
+    "qiskit-addon-cutting>=0.10.0,<0.11",
+    "qiskit-aer>=0.17.2",
+    "qiskit-ibm-runtime>=0.45.0",
+    "scipy>=1.15.3",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.4.2"]
 
 [tool.setuptools.packages.find]
 where = ["."]

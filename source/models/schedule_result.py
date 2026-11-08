@@ -56,6 +56,9 @@ class ResultOfSchedule:
     optional_cutting_policy: str | None = None
     queue_policy: str = "strict"
     seed: int = 0
+    workload_fingerprint: str = ""
+    git_commit: str = ""
+    config: dict = field(default_factory=dict)
     execution_summary: ExecutionSummary | None = None
 
     def capture_execution(self, summary: ExecutionSummary) -> None:
