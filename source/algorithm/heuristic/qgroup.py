@@ -498,19 +498,61 @@ def qgroup(
 # Framework Integration
 # ============================================================================
 
-@dataclass
-class QGroupBin:
-    """A schedule group for framework integration."""
-    machine_name: str
-    jobs: dict[str, SchedulerJobInfo]
-    start_time: float
-    duration: float
-    dispatch_order: int
+# Seed for the compilations QGroup runs to estimate runtimes and EPST. They only feed
+# estimates; the execution phase compiles every batch again with the run's own seed.
+_ESTIMATE_SEED = 0
+# Per-shot runtime proxy (seconds per layer) for a machine without calibration data
+_UNCALIBRATED_LAYER_TIME = 1e-7
+
+
+def _workload_segments(schedule: QGroupSchedule) -> list[tuple[list[int], list[int]]]:
+    """Split a schedule into its workloads: maximal runs of bins with the same job set.
+
+    Returns (job indices, bin count per job index) per workload, in time order. Every
+    change of workload is a point where QGroup's model pays the overhead d.
+    """
+    X = schedule.X
+    segments: list[tuple[list[int], list[int]]] = []
+    previous = None
+    for t in range(X.shape[1]):
+        column = tuple(int(v) for v in X[:, t])
+        if not any(column):
+            previous = None
+            continue
+        if column != previous:
+            segments.append(([i for i, v in enumerate(column) if v], []))
+            previous = column
+        segments[-1][1].append(t)
+    return [(members, len(bins)) for members, bins in segments]
 
 
 @register_algorithm("QGroup")
 class QGroup:
-    """QGroup scheduling algorithm integrated with the quantum scheduling framework."""
+    """QGroup (Orenstein & Chaudhary, QCE 2024) integrated with the framework.
+
+    Following the paper:
+    - Per-shot runtime T (Sec. V-A): the job compiled for the machine type, with the
+      calibrated durations of all its gates and measurements added up ("computed
+      naively by adding the estimated runtime for each gate"). The objective scales it
+      by m = runtime_scale = 0.748 and charges d = overhead = 1.8 s per workload
+      change, the regression values the paper fitted on IBM Kyoto and Osaka.
+    - Fidelity (Sec. IV-D): EPST as in QuCloud+, the product of (1 - error) over the
+      job's gates and measurements on the physical qubits it gets when compiled
+      together with the jobs of its workload; a job in several workloads takes the
+      lowest. Machines are ranked by finish time - ln(min EPST of the group).
+    - Execution follows the BILP matrix X: each workload is one batch, run in order
+      on its machine, and a job spanning several workloads is split into shot shards,
+      one per workload.
+
+    Adaptations to this framework:
+    - eta defaults to 1.0, not the paper's 0.75: the devices here have 5 qubits, so
+      0.75 would forbid every 4- and 5-qubit job the other algorithms run. Crosstalk
+      is modelled by the execution phase, so packing a machine full still costs fidelity.
+    - A cut subcircuit runs every one of its r QPD subexperiments for each shot, so its
+      per-shot runtime is r times that of one subexperiment circuit.
+    - The workload-change overhead d is part of QGroup's own objective only; the
+      execution phase charges no such overhead to any algorithm.
+    """
 
     def __init__(
         self,
@@ -533,32 +575,41 @@ class QGroup:
             fidelity_weight=fidelity_weight,
             time_limit=time_limit,
         )
+        self._jobs: dict[str, SchedulerJobInfo] = {}
+        self._machines: dict[str, MachineCharacteristic] = {}
+        self._runtime_cache: dict[tuple[str, str], float] = {}
+        self._epst_cache: dict[tuple[str, frozenset], dict[str, float]] = {}
+
+    def bind(
+        self,
+        scheduler_job: dict[str, SchedulerJobInfo],
+        machines: dict[str, MachineCharacteristic],
+    ) -> None:
+        """Give the runtime and EPST callbacks the jobs and machines they estimate for."""
+        self._jobs = scheduler_job
+        self._machines = machines
+        self._runtime_cache = {}
+        self._epst_cache = {}
 
     def execute(
         self,
         scheduler_job: dict[str, SchedulerJobInfo],
         machines: dict[str, MachineCharacteristic],
     ) -> dict[str, SchedulerJobInfo]:
-        """Execute QGroup scheduling algorithm."""
+        """Execute QGroup and return the jobs, or their shot shards, to run."""
         if not scheduler_job:
             return scheduler_job
 
-        qgroup_jobs = self._convert_jobs(scheduler_job)
-        qgroup_machines = self._convert_machines(machines)
-
+        self.bind(scheduler_job, machines)
         plan = qgroup(
-            machines=qgroup_machines,
-            queue=qgroup_jobs,
+            machines=self._convert_machines(machines),
+            queue=self._convert_jobs(scheduler_job),
             runtime=self._runtime_callback,
             fidelity=self._fidelity_callback,
             p=self.params,
             compress=True,
         )
-
-        bins = self._convert_plan_to_bins(plan, scheduler_job, machines)
-        self._assign_jobs(bins, machines)
-
-        return scheduler_job
+        return self._apply_plan(plan, scheduler_job, machines)
 
     def _convert_jobs(self, scheduler_job: dict[str, SchedulerJobInfo]) -> list[QGroupJob]:
         """Convert framework jobs to QGroup format."""
@@ -577,82 +628,167 @@ class QGroup:
             for name, machine in machines.items()
         ]
 
+    # ------------------------------------------------------------------
+    # Runtime (Sec. V-A) and EPST (Sec. IV-D)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _representative_circuit(job_info: JobInfo):
+        """The circuit run per shot: a cut subcircuit's first subexperiment, else the job's."""
+        if getattr(job_info, "subexperiments", None):
+            return job_info.subexperiments[0]
+        return job_info.circuit
+
+    @staticmethod
+    def _compiled(machine: MachineCharacteristic, jobs: dict[str, JobInfo]):
+        """Compile jobs together exactly as the execution phase composes a batch."""
+        from source.flow.execution.circuit_composer import CircuitPreparation
+
+        return CircuitPreparation().prepare_batch(machine, jobs, seed=_ESTIMATE_SEED)
+
     def _runtime_callback(self, job: QGroupJob, machine: QGroupMachine) -> float:
-        """Estimate runtime for a job on a machine."""
-        base_time = 0.0001 * job.qubits * (job.shots / 1024)
-        return base_time
+        """Per-shot runtime T in seconds: calibrated gate times added up (paper Sec. V-A)."""
+        key = (job.id, machine.id)
+        if key not in self._runtime_cache:
+            info = self._jobs[job.id].job_information
+            framework_machine = self._machines[machine.id]
+            backend = framework_machine.quantum_machine
+            circuit = self._representative_circuit(info)
+            if backend is None or getattr(backend, "target", None) is None:
+                seconds = max(circuit.depth(), 1) * _UNCALIBRATED_LAYER_TIME
+            else:
+                compiled = self._compiled(framework_machine, {job.id: info.__class__(
+                    job_name=job.id, circuit=circuit, num_qubits=circuit.num_qubits
+                )}).transpiled_circuit
+                seconds = 0.0
+                for instruction in compiled.data:
+                    name = instruction.operation.name
+                    if name in ("delay", "barrier"):
+                        continue
+                    qargs = tuple(compiled.find_bit(q).index for q in instruction.qubits)
+                    try:
+                        seconds += backend.target[name][qargs].duration or 0.0
+                    except (KeyError, TypeError):
+                        continue
+                seconds = max(seconds, _UNCALIBRATED_LAYER_TIME)
+            from source.utils.timing import num_circuit_runs
+            self._runtime_cache[key] = seconds * num_circuit_runs(info)
+        return self._runtime_cache[key]
+
+    def _workload_epst(self, machine_id: str, job_ids: frozenset) -> dict[str, float]:
+        """EPST of every job in one workload, compiled together on the machine."""
+        key = (machine_id, job_ids)
+        if key in self._epst_cache:
+            return self._epst_cache[key]
+
+        framework_machine = self._machines[machine_id]
+        backend = framework_machine.quantum_machine
+        if backend is None or getattr(backend, "target", None) is None:
+            self._epst_cache[key] = {job_id: 1.0 for job_id in job_ids}
+            return self._epst_cache[key]
+
+        ordered = [job_id for job_id in self._jobs if job_id in job_ids]
+        jobs = {}
+        for job_id in ordered:
+            info = self._jobs[job_id].job_information
+            circuit = self._representative_circuit(info)
+            jobs[job_id] = info.__class__(job_name=job_id, circuit=circuit, num_qubits=circuit.num_qubits)
+        prepared = self._compiled(framework_machine, jobs)
+        compiled = prepared.transpiled_circuit
+
+        # Physical qubits of each job: where its virtual qubits start and end
+        initial = compiled.layout.initial_index_layout(filter_ancillas=True)
+        final = compiled.layout.final_index_layout(filter_ancillas=True)
+        owner: dict[int, set[str]] = {}
+        offset = 0
+        for job_id in ordered:
+            width = jobs[job_id].circuit.num_qubits
+            for virtual in range(offset, offset + width):
+                for physical in (initial[virtual], final[virtual]):
+                    owner.setdefault(physical, set()).add(job_id)
+            offset += width
+
+        log_success = {job_id: 0.0 for job_id in ordered}
+        for instruction in compiled.data:
+            name = instruction.operation.name
+            if name in ("delay", "barrier"):
+                continue
+            qargs = tuple(compiled.find_bit(q).index for q in instruction.qubits)
+            try:
+                error = backend.target[name][qargs].error or 0.0
+            except (KeyError, TypeError):
+                continue
+            touched = set().union(*(owner.get(q, set()) for q in qargs))
+            for job_id in touched:
+                log_success[job_id] += log(max(1.0 - error, 1e-12))
+
+        self._epst_cache[key] = {job_id: exp(value) for job_id, value in log_success.items()}
+        return self._epst_cache[key]
 
     def _fidelity_callback(self, job: QGroupJob, machine: QGroupMachine, schedule: QGroupSchedule) -> float:
-        """Estimate fidelity (EPST) for a job."""
-        base_fidelity = 0.95
-        qubit_penalty = (1.0 - 0.01 * job.qubits / machine.qubits)
+        """EPST of the job (QuCloud+ definition), lowest over the workloads it runs in."""
+        index = next(i for i, j in enumerate(schedule.jobs) if j.id == job.id)
+        values = []
+        for members, _ in _workload_segments(schedule):
+            if index in members:
+                job_ids = frozenset(schedule.jobs[i].id for i in members)
+                values.append(self._workload_epst(machine.id, job_ids)[job.id])
+        return max(min(values, default=1.0), 1e-12)
 
-        if hasattr(schedule, 'X') and schedule.X.size > 0:
-            peak_util = max(
-                sum(schedule.jobs[i].qubits * schedule.X[i, t] for i in range(len(schedule.jobs)))
-                for t in range(schedule.X.shape[1])
-            )
-            workload_penalty = 1.0 - 0.005 * (peak_util / machine.qubits)
-        else:
-            workload_penalty = 1.0
+    # ------------------------------------------------------------------
+    # Execution according to X
+    # ------------------------------------------------------------------
 
-        fidelity = base_fidelity * qubit_penalty * workload_penalty
-        return max(0.01, min(1.0, fidelity))
-
-    def _convert_plan_to_bins(
+    def _apply_plan(
         self,
         plan: QGroupPlan,
         scheduler_job: dict[str, SchedulerJobInfo],
         machines: dict[str, MachineCharacteristic],
-    ) -> list[QGroupBin]:
-        """Convert QGroup plan to framework bins."""
-        bins = []
-        dispatch_order_per_machine = {machine_name: 0 for machine_name in machines}
+    ) -> dict[str, SchedulerJobInfo]:
+        """Turn each workload of the plan into one batch on its machine.
 
-        for machine_id, assignments in plan.assignments.items():
-            for assignment in assignments:
-                jobs_in_group = {}
-                for job in assignment.schedule.jobs:
-                    if job.id in scheduler_job:
-                        jobs_in_group[job.id] = scheduler_job[job.id]
+        Workloads run in plan order on their machine, each waiting for the previous
+        one (a barrier, as in FFD). A job running in k > 1 workloads is split into k
+        shot shards, one per workload, with delta shots per bin; any extra shots from
+        rounding up to whole bins come off its last shard.
+        """
+        from source.flow.schedule.shots import ShotDistributionHelper
 
-                if jobs_in_group:
-                    bin_obj = QGroupBin(
-                        machine_name=machine_id,
-                        jobs=jobs_in_group,
-                        start_time=assignment.start,
-                        duration=assignment.finish - assignment.start,
-                        dispatch_order=dispatch_order_per_machine[machine_id],
-                    )
-                    bins.append(bin_obj)
-                    dispatch_order_per_machine[machine_id] += 1
+        scheduled: dict[str, SchedulerJobInfo] = {}
+        for machine_name, assignments in plan.assignments.items():
+            previous_members: list[JobInfo] = []
+            dispatch_order = 0
+            for assignment in sorted(assignments, key=lambda a: a.start):
+                sched = assignment.schedule
+                segments = _workload_segments(sched)
 
-        bins.sort(key=lambda b: b.start_time)
-        return bins
+                # Shots each job runs in each of its workloads
+                shares: dict[int, list[tuple[int, int]]] = {}
+                for k, (members, bins) in enumerate(segments):
+                    for i in members:
+                        shares.setdefault(i, []).append((k, bins * sched.delta))
+                pieces: dict[tuple[int, int], tuple[str, SchedulerJobInfo]] = {}
+                for i, parts in shares.items():
+                    name = sched.jobs[i].id
+                    s_job = scheduler_job[name]
+                    requested = s_job.job_information.shots or 1024
+                    shots = [n for _, n in parts]
+                    shots[-1] -= sum(shots) - requested
+                    parts = [(k, n) for (k, _), n in zip(parts, shots) if n > 0]
+                    if len(parts) == 1:
+                        pieces[(i, parts[0][0])] = (name, s_job)
+                        continue
+                    shards = ShotDistributionHelper.split_shots(s_job, [n for _, n in parts])
+                    for (k, _), shard in zip(parts, shards.items()):
+                        pieces[(i, k)] = shard
 
-    def _assign_jobs(
-        self,
-        bins: list[QGroupBin],
-        machines: dict[str, MachineCharacteristic],
-    ) -> None:
-        """Update jobs with machine assignments and dependencies."""
-        previous_bin_jobs: dict[str, list[JobInfo]] = {
-            machine_name: [] for machine_name in machines
-        }
-
-        for bin_obj in bins:
-            machine_name = bin_obj.machine_name
-
-            for job in bin_obj.jobs.values():
-                dependencies = merge_dependencies(
-                    job.depends_on or [], previous_bin_jobs[machine_name]
-                )
-                job.assigned_machine = machine_name
-                job.dispatch_order = bin_obj.dispatch_order
-                job.depends_on = dependencies
-
-            previous_bin_jobs[machine_name] = [
-                job.job_information
-                for job in bin_obj.jobs.values()
-                if job.job_information is not None
-            ]
+                for k, (members, _) in enumerate(segments):
+                    segment = [pieces[(i, k)] for i in members if (i, k) in pieces]
+                    for name, piece in segment:
+                        piece.assigned_machine = machine_name
+                        piece.dispatch_order = dispatch_order
+                        piece.depends_on = merge_dependencies(piece.depends_on or [], previous_members)
+                        scheduled[name] = piece
+                    previous_members = [piece.job_information for _, piece in segment]
+                    dispatch_order += 1
+        return scheduled

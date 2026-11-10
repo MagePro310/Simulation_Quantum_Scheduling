@@ -132,3 +132,57 @@ def test_duration_estimate_counts_every_subexperiment():
         assert num_circuit_runs(s_job) == len(info.subexperiments) == 6  # one cut CNOT
         assert estimate_job_duration(s_job) == info.circuit.depth() * info.shots * 6
     assert num_circuit_runs(big) == 1
+
+
+# ---------------------------------------------------------------------------
+# Cut jobs are scored on the parent circuit's own classical bits
+# ---------------------------------------------------------------------------
+
+from source.algorithm.heuristic.ffd import FFD  # noqa: E402
+from source.flow.input.benchmark_circuits import load_benchmark_circuit  # noqa: E402
+from source.flow.schedule.schedule_phase import SchedulePhase  # noqa: E402
+from source.models.schedule_result import ResultOfSchedule  # noqa: E402
+from source.simulator import FakeJakartaV2  # noqa: E402
+from source.utils.ideal_distribution import measurement_map, project_to_clbits  # noqa: E402
+
+
+def test_measurement_map_of_measure_all_is_identity():
+    circuit = QuantumCircuit(3)
+    circuit.measure_all()
+    assert measurement_map(circuit) == ({0: 0, 1: 1, 2: 2}, 3)
+    assert measurement_map(QuantumCircuit(2)) == ({0: 0, 1: 1}, 2)
+
+
+def test_project_to_clbits_reorders_and_marginalises():
+    # 3 qubits; clbit 0 <- qubit 2, clbit 1 <- qubit 0; qubit 1 unmeasured
+    dist = {"001": 0.25, "011": 0.25, "100": 0.5}  # keys: qubit2 qubit1 qubit0
+    projected = project_to_clbits(dist, 3, {0: 2, 1: 0}, 2)
+    # "001": q0=1 -> c1=1, q2=0 -> c0=0 -> "10"; "011" same; "100": q2=1 -> "01"
+    assert projected == pytest.approx({"10": 0.5, "01": 0.5})
+
+
+def _run_alone(benchmark: str, qubits: int, backend, capacity: int):
+    circuit = load_benchmark_circuit(benchmark, qubits)
+    job = JobInfo(job_name="p", circuit=circuit, num_qubits=circuit.num_qubits, shots=1024, arrival_time=0)
+    machines = {backend.name: MachineCharacteristic(name=backend.name, quantum_machine=backend, capacity=capacity)}
+    scheduled = SchedulePhase(algorithm=FFD()).execute({"p": job}, machines, ResultOfSchedule())
+    results = ExecutionPhase(reporter=SilentTimelineReporter()).execute(machines, scheduled, seed=3)
+    return results["p"]
+
+
+# Sizes whose cheapest cut is a single CNOT, within the default budget
+@pytest.mark.parametrize(("benchmark", "qubits"), [("dj", 6), ("qpeexact", 4)])
+def test_cut_and_uncut_runs_are_scored_on_the_same_bits(benchmark, qubits):
+    cut = _run_alone(benchmark, qubits, FakeBelemV2(), capacity=qubits - 1)  # must cut [n-1, 1]
+    whole = _run_alone(benchmark, qubits, FakeJakartaV2(), capacity=7)        # runs whole
+    assert cut.status == whole.status == "SUCCEEDED"
+    assert cut.reconstructed_distribution is not None and whole.reconstructed_distribution is None
+
+    circuit = load_benchmark_circuit(benchmark, qubits)
+    width = circuit.num_clbits
+    assert width < qubits  # these benchmarks leave one qubit unmeasured
+    assert {len(k) for k in cut.distribution_with_noise} == {width}
+    assert cut.distribution_no_noise == pytest.approx(ideal_counts(circuit, 1024, seed=0))
+    assert cut.distribution_no_noise == pytest.approx(whole.distribution_no_noise)
+    top = max(cut.distribution_no_noise, key=cut.distribution_no_noise.get)
+    assert max(cut.distribution_with_noise, key=cut.distribution_with_noise.get) == top

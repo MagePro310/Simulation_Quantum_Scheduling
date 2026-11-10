@@ -164,7 +164,7 @@ class ReconstructionHandler:
             results[parent_name] = ExecutionResult(
                 job_info=parent_job,
                 assigned_machine="cut_reconstruction",
-                distribution_no_noise=recon_counts,
+                distribution_no_noise=uncut_counts,  # exact ideal, as for uncut jobs
                 distribution_with_noise=recon_counts,
                 execution_time=p_duration,
                 start_time=p_start,

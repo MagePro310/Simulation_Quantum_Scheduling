@@ -66,6 +66,13 @@ def load_benchmark_circuit(benchmark: str, num_qubits: int) -> QuantumCircuit:
     circuit = expand_to_two_qubit_gates(
         get_benchmark(benchmark, level=BENCHMARK_LEVEL, circuit_size=num_qubits)
     )
+    if circuit.layout is not None:
+        # Some INDEP circuits (qft, qpeexact, ...) carry a TranspileLayout from MQT Bench's
+        # own processing. It is metadata only: the gates and measurements already encode
+        # the circuit. Left in place, Qiskit 2 warns on every remove_final_measurements
+        # (circuit cutting) and the layout would leak into composed batches.
+        circuit = circuit.copy()
+        circuit._layout = None
     if circuit.num_clbits == 0:
         circuit.measure_all()
     return circuit

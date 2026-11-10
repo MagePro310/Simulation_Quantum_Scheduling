@@ -8,7 +8,14 @@ COMPARISON_METRICS: list[dict[str, Any]] = [
     {
         "field": "schedule_latency",
         "label": "Schedule Latency",
-        "description": "Wall-clock scheduling decision time (s)",
+        "description": "Wall-clock scheduling decision time, without subexperiment generation (s)",
+        "unit": "Seconds (s)",
+        "lower_is_better": True,
+    },
+    {
+        "field": "cutting_time",
+        "label": "Cutting Time",
+        "description": "Wall-clock time generating subcircuits and QPD subexperiments (s)",
         "unit": "Seconds (s)",
         "lower_is_better": True,
     },
@@ -52,6 +59,13 @@ COMPARISON_METRICS: list[dict[str, Any]] = [
         "label": "Cutting Overhead",
         "description": "Total sampling overhead incurred from circuit cutting",
         "unit": "Sampling factor",
+        "lower_is_better": True,
+    },
+    {
+        "field": "crosstalk_exposure",
+        "label": "Crosstalk Exposure",
+        "description": "Share of executed two-qubit gates running next to a simultaneous neighbouring one",
+        "unit": "Ratio (0-1)",
         "lower_is_better": True,
     },
 ]

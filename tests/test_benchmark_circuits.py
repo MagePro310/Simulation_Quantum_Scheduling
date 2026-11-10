@@ -60,3 +60,9 @@ def test_input_phase_builds_jobs_from_loaded_circuits():
     jobs, _ = InputPhase(config).create_input(ResultOfSchedule())
     assert jobs["q"].num_qubits == jobs["q"].circuit.num_qubits == 4
     _assert_pipeline_ready(jobs["q"].circuit)
+
+
+@pytest.mark.parametrize("benchmark", ["qft", "qpeexact"])
+def test_loaded_circuits_carry_no_layout(benchmark):
+    assert get_benchmark(benchmark, level=BenchmarkLevel.INDEP, circuit_size=4).layout is not None
+    assert load_benchmark_circuit(benchmark, 4).layout is None

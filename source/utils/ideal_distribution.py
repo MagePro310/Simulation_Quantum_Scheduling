@@ -24,24 +24,19 @@ class UnsupportedIdealCircuit(ValueError):
     """The circuit has operations a statevector cannot represent exactly."""
 
 
-def ideal_probabilities(circuit: QuantumCircuit) -> dict[str, float]:
-    """Exact output distribution of a circuit whose measurements are all terminal.
+def measurement_map(circuit: QuantumCircuit) -> tuple[dict[int, int], int]:
+    """(clbit -> measured qubit, number of clbits) of a circuit whose measurements are terminal.
 
-    A circuit without classical bits is measured on every qubit, as measure_all() would.
+    A circuit without classical bits counts as measured on every qubit, clbit i <- qubit i.
 
     Raises:
-        UnsupportedIdealCircuit: For resets, classically controlled operations,
-            a gate after a measurement on the same qubit, or a classical bit
-            written twice.
+        UnsupportedIdealCircuit: For resets, classically controlled operations, a gate
+            after a measurement on the same qubit, or a classical bit written twice.
     """
     if circuit.num_clbits == 0:
-        circuit = circuit.copy()
-        circuit.measure_all()
-
-    unitary = QuantumCircuit(circuit.num_qubits)
-    clbit_source: dict[int, int] = {}  # clbit index -> measured qubit index
+        return {q: q for q in range(circuit.num_qubits)}, circuit.num_qubits
+    clbit_source: dict[int, int] = {}
     measured_qubits: set[int] = set()
-
     for instruction in circuit.data:
         operation = instruction.operation
         qubits = [circuit.find_bit(q).index for q in instruction.qubits]
@@ -58,12 +53,55 @@ def ideal_probabilities(circuit: QuantumCircuit) -> dict[str, float]:
             raise UnsupportedIdealCircuit(f"non-unitary operation {operation.name!r}")
         if measured_qubits.intersection(qubits):
             raise UnsupportedIdealCircuit(f"{operation.name!r} acts on a measured qubit")
-        unitary.append(operation, qubits)
+    return clbit_source, circuit.num_clbits
 
-    order = sorted(measured_qubits)
+
+def _unitary_part(circuit: QuantumCircuit) -> QuantumCircuit:
+    unitary = QuantumCircuit(circuit.num_qubits)
+    for instruction in circuit.data:
+        if instruction.operation.name in _SKIPPED or instruction.operation.name == "measure":
+            continue
+        unitary.append(instruction.operation, [circuit.find_bit(q).index for q in instruction.qubits])
+    return unitary
+
+
+def project_to_clbits(
+    dist_by_qubit: dict[str, float],
+    num_qubits: int,
+    clbit_map: dict[int, int],
+    width: int,
+) -> dict[str, float]:
+    """Re-key a distribution over all qubits onto a circuit's own classical bits.
+
+    Input keys are qubit-ordered (Qiskit convention, qubit 0 rightmost). Output keys
+    have one character per clbit (clbit 0 rightmost): clbit c holds the bit of the
+    qubit measured into it, unmeasured clbits read "0". Keys that collapse together
+    (unmeasured qubits) are summed, giving the marginal distribution.
+    """
+    projected: dict[str, float] = {}
+    for key, value in dist_by_qubit.items():
+        bits = ["0"] * width
+        for clbit, qubit in clbit_map.items():
+            bits[width - 1 - clbit] = key[num_qubits - 1 - qubit]
+        new_key = "".join(bits)
+        projected[new_key] = projected.get(new_key, 0.0) + value
+    return projected
+
+
+def ideal_probabilities(circuit: QuantumCircuit) -> dict[str, float]:
+    """Exact output distribution of a circuit whose measurements are all terminal.
+
+    A circuit without classical bits is measured on every qubit, as measure_all() would.
+
+    Raises:
+        UnsupportedIdealCircuit: For resets, classically controlled operations,
+            a gate after a measurement on the same qubit, or a classical bit
+            written twice.
+    """
+    clbit_source, width = measurement_map(circuit)
+    order = sorted(set(clbit_source.values()))
     position = {qubit: bit for bit, qubit in enumerate(order)}
-    probabilities = Statevector(unitary).probabilities(qargs=order)
-    width = circuit.num_clbits
+    probabilities = Statevector(_unitary_part(circuit)).probabilities(qargs=order)
 
     distribution: dict[str, float] = {}
     for outcome, probability in enumerate(probabilities):

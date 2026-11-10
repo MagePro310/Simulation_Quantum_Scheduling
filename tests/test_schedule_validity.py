@@ -88,6 +88,7 @@ def test_qgroup_plan_respects_capacity_in_every_time_slot():
     algorithm = QGroup()
     machines = _machines(5, 5)
     jobs = _jobs(*WORKLOAD)
+    algorithm.bind(jobs, machines)
     plan = qgroup(
         machines=algorithm._convert_machines(machines),
         queue=algorithm._convert_jobs(jobs),
