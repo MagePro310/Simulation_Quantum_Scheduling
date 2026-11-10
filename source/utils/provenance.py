@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 import hashlib
 from importlib import metadata
 import json
@@ -30,7 +30,15 @@ def workload_fingerprint(
     benchmark: str,
     machine_names: Iterable[str],
 ) -> str:
-    """Hash the actual jobs and machines; machine order counts because it affects first fit."""
+    """Hash the actual jobs and machines; machine order counts because it affects first fit.
+
+    Given the machines dict (name -> MachineCharacteristic), each machine's rep_delay is
+    hashed too: it sets the time of every shot, so runs with different values don't compare.
+    """
+    rep_delays = (
+        {name: getattr(m, "rep_delay", None) for name, m in machine_names.items()}
+        if isinstance(machine_names, Mapping) else None
+    )
     payload = {
         "benchmark": benchmark,
         "jobs": {
@@ -39,6 +47,8 @@ def workload_fingerprint(
         },
         "machines": list(machine_names),
     }
+    if rep_delays is not None:
+        payload["rep_delays"] = rep_delays
     encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()[:16]
 

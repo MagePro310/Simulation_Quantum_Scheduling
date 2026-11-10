@@ -23,6 +23,7 @@ from source.flow.execution.circuit_composer import CircuitPreparation
 from source.flow.execution.interfaces import DefaultLayoutStrategy, LayoutStrategy
 from source.flow.execution.quantum_simulator import QuantumExecutor
 from source.utils.seeding import derive_seed
+from source.utils.timing import shots_duration
 
 
 class BatchExecutor:
@@ -135,7 +136,11 @@ class BatchExecutor:
 
             # Joint circuits run one after another; each keeps only its own qubits busy
             durations = [
-                float(c.estimate_duration(machine.quantum_machine.target, unit="s")) * batch_record.shots
+                shots_duration(
+                    c.estimate_duration(machine.quantum_machine.target, unit="s"),
+                    batch_record.shots,
+                    machine.rep_delay,
+                )
                 for c in isa_composed
             ]
             total_duration = sum(durations)
@@ -247,7 +252,9 @@ class BatchExecutor:
             except Exception as e:
                 return batch_record, None, f"Batch {batch_id} preparation failed: {e}", None
 
-        batch_record.end_time = now + float(prepared_batch.duration_per_shot) * batch_record.shots
+        batch_record.end_time = now + shots_duration(
+            prepared_batch.duration_per_shot, batch_record.shots, machine.rep_delay
+        )
 
         for name in active_jobs:
             if results[name].start_time is None:

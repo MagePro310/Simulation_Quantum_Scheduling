@@ -91,6 +91,9 @@ class ExecutionConfig:
     seed: int = 0
     queue_policy: str = "strict"  # 'strict' or 'backfill'
     timeout: int = 600
+    # Wait between shots, in seconds. None uses each backend's default_rep_delay
+    # (250 us on the IBM fake backends), which dominates a shot's time.
+    rep_delay: float | None = None
 
     def __post_init__(self) -> None:
         self.queue_policy = self.queue_policy.lower()
@@ -103,6 +106,8 @@ class ExecutionConfig:
             raise ValueError(f"Random seed must be a non-negative integer, got {self.seed}.")
         if self.timeout <= 0:
             raise ValueError(f"Timeout must be positive, got {self.timeout}.")
+        if self.rep_delay is not None and self.rep_delay < 0:
+            raise ValueError(f"rep_delay must be non-negative seconds, got {self.rep_delay}.")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> ExecutionConfig:
@@ -112,6 +117,7 @@ class ExecutionConfig:
             seed=int(data.get("seed", 0)),
             queue_policy=data.get("queue_policy", "strict"),
             timeout=int(data.get("timeout", 600)),
+            rep_delay=None if data.get("rep_delay") is None else float(data["rep_delay"]),
         )
 
 
