@@ -24,10 +24,13 @@ class SchedulingCutterHelper:
         """Check if a circuit is eligible for cutting.
 
         Eligible circuits must be uncut root circuits (parent_job is None) and have
-        qubits >= min_qubits.
+        qubits >= min_qubits. Shot shards and jobs already split into shards are not
+        eligible: cut first, then distribute shots.
         """
         job_info = job.job_information if isinstance(job, SchedulerJobInfo) else job
         if not job_info:
+            return False
+        if getattr(job_info, "shot_parent", None) is not None or getattr(job_info, "shot_shards", None):
             return False
         qubits = getattr(job_info, "num_qubits", 0) or getattr(getattr(job_info, "circuit", None), "num_qubits", 0)
         return getattr(job_info, "parent_job", None) is None and qubits >= min_qubits

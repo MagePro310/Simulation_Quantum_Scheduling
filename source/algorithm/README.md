@@ -13,6 +13,7 @@ The [`source/algorithm/`](.) directory hosts scheduling algorithms for the quant
   - [`ffd.py`](heuristic/ffd.py): First Fit Decreasing.
   - [`ffd_v2.py`](heuristic/ffd_v2.py): FFD with pre-sort circuit cutting.
   - [`adaptive_ffd.py`](heuristic/adaptive_ffd.py): Adaptive FFD (on-the-fly slack cutting).
+  - [`cut_and_shoot.py`](heuristic/cut_and_shoot.py): Cut&Shoot (cut every circuit, then split each fragment's shots across machines).
   - [`lpt.py`](heuristic/lpt.py): Longest Processing Time first.
   - [`qgroup.py`](heuristic/qgroup.py): QGroup (Clustering + MILP, IEEE QCE 2024).
 
@@ -76,3 +77,23 @@ cut_jobs = SchedulingCutterHelper.cut_jobs(scheduler_job, target_qubits=max_capa
 if SchedulingCutterHelper.can_cut(job):
     sub_jobs = SchedulingCutterHelper.cut_job(job, cluster_sizes=[slack, remainder])
 ```
+
+---
+
+## 4. Shot Distribution Helper
+
+Use [`ShotDistributionHelper`](../flow/schedule/shots/shot_split_helper.py) to run one job's shots on several machines. The job is replaced by shard jobs; give each shard its own `assigned_machine` and `dispatch_order`. When every shard succeeds, the engine merges their counts (and, for a cut subcircuit, their QPD results) back under the original job's name, then reconstructs the cut parent as usual.
+
+```python
+from source.flow.schedule.shots import ShotDistributionHelper
+
+# Cut first, then distribute shots: shards cannot be cut or split again
+if ShotDistributionHelper.can_split(job):
+    shards = ShotDistributionHelper.split_shots(job, [700, 324])  # or an int for equal shards
+    for (name, shard), machine in zip(shards.items(), ["fake_belem", "fake_bogota"]):
+        shard.assigned_machine = machine
+        shard.dispatch_order = next_order[machine]
+    # Return the shards in place of `job`; returning both is rejected at execution
+```
+
+A dependency on the original job waits for all of its shards.

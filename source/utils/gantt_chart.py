@@ -320,6 +320,13 @@ class GanttChart:
         if self.show_legend:
             for name in job_names:
                 info = schedule_job[name]
+                # A subcircuit split into shot shards is drawn as its shards, and its cut
+                # parent carries the fidelity; listing the merged subcircuit only repeats them
+                if (
+                    getattr(info, "assigned_machine", None) == "shot_merge"
+                    and getattr(getattr(info, "job_info", None), "parent_job", None) is not None
+                ):
+                    continue
                 q = getattr(info, "num_qubits", None)
                 for attr_chain in ["job_info", "job_information"]:
                     if q is None and hasattr(info, attr_chain) and getattr(info, attr_chain):

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
+
 from qiskit import QuantumCircuit
 
 
@@ -24,6 +26,7 @@ class BatchCounts:
 
     distribution_no_noise: dict[str, int]
     distribution_with_noise: dict[str, int]
+    sub_result: Any | None = None  # QPD PrimitiveResult for a cut subcircuit
 
 
 @dataclass
@@ -39,6 +42,17 @@ class BatchExecutionRecord:
     logical_qubits: int
     status: str = "RUNNING"
     error_reason: str | None = None
+    # Logical qubit-seconds actually occupied. None means every qubit of the batch was
+    # busy for its whole duration (logical_qubits * duration). A joint cutting batch sets
+    # it from its individual circuits, since an uncut job runs in only the first of them.
+    qubit_time: float | None = None
+
+    @property
+    def occupied_qubit_time(self) -> float:
+        """Logical qubit-seconds this batch kept busy."""
+        if self.qubit_time is not None:
+            return self.qubit_time
+        return self.logical_qubits * (self.end_time - self.start_time)
 
 
 @dataclass

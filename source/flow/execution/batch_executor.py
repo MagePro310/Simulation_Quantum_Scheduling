@@ -22,6 +22,7 @@ from source.models.machine import MachineCharacteristic
 from source.flow.execution.circuit_composer import CircuitPreparation
 from source.flow.execution.interfaces import DefaultLayoutStrategy, LayoutStrategy
 from source.flow.execution.quantum_simulator import QuantumExecutor
+from source.utils.seeding import derive_seed
 
 
 class BatchExecutor:
@@ -123,8 +124,7 @@ class BatchExecutor:
                 pm_kwargs["initial_layout"] = initial_layout
 
             pass_manager = generate_preset_pass_manager(**pm_kwargs)
-            # qiskit-ibm-runtime's local mode silently ignores a seed of 0, so never pass one
-            batch_seed = (seed + batch_id) % 2**32 or 1
+            batch_seed = derive_seed(seed, batch_id)
             sampler = SamplerV2(
                 mode=machine.quantum_machine,
                 options={"simulator": {"seed_simulator": batch_seed}},
@@ -133,10 +133,13 @@ class BatchExecutor:
             joint_circuits, reg_meta = self.circuit_composer.compose_joint_cutting_batch(jobs_dict)
             isa_composed = pass_manager.run(joint_circuits)
 
-            total_duration = sum(
-                float(c.estimate_duration(machine.quantum_machine.target, unit="s"))
+            # Joint circuits run one after another; each keeps only its own qubits busy
+            durations = [
+                float(c.estimate_duration(machine.quantum_machine.target, unit="s")) * batch_record.shots
                 for c in isa_composed
-            ) * batch_record.shots
+            ]
+            total_duration = sum(durations)
+            qubit_time = sum(qc.num_qubits * d for qc, d in zip(joint_circuits, durations))
 
             raw_res = sampler.run(isa_composed, shots=batch_record.shots).result()
 
@@ -149,9 +152,15 @@ class BatchExecutor:
                 if meta["type"] == "subcircuit":
                     job_counts[name] = self._extract_subcircuit_results(raw_res, meta, info)
                 else:
-                    job_counts[name] = self._extract_uncut_results(raw_res, meta, info, batch_record.shots, seed)
+                    job_counts[name] = self._extract_uncut_results(raw_res, meta, info, batch_record.shots, batch_seed)
 
             batch_record.end_time = now + max(total_duration, 0.0001)
+            elapsed = batch_record.end_time - now
+            # Keep qubit-time consistent with the minimum duration a batch is given
+            batch_record.qubit_time = (
+                qubit_time * elapsed / total_duration if total_duration > 0
+                else batch_record.logical_qubits * elapsed
+            )
             return batch_record, job_counts, None, None
 
         except Exception as e:
@@ -159,7 +168,12 @@ class BatchExecutor:
 
     @staticmethod
     def _extract_subcircuit_results(raw_res, meta: dict[str, Any], info: Any) -> BatchCounts:
-        """Extract measurement results and wrap DataBin / PubResult for cut subcircuits."""
+        """Extract measurement results and wrap DataBin / PubResult for cut subcircuits.
+
+        The QPD result is returned in BatchCounts.sub_result rather than written to the
+        cutting context: a subcircuit can run over several batches or several shot
+        shards, and ReconstructionHandler merges those before reconstruction.
+        """
         sub_len = meta["len"]
         pubs = []
         for p in raw_res[:sub_len]:
@@ -173,9 +187,6 @@ class BatchExecutor:
             pubs.append(PubResult(db))
 
         sub_res = PrimitiveResult(pubs)
-        parent_job = getattr(info, "parent_job", None)
-        if parent_job and getattr(parent_job, "cutting_context", None):
-            parent_job.cutting_context.sub_results[info.partition_label] = sub_res
 
         obs_meas = getattr(getattr(sub_res[0], "data", None), "observable_measurements", None)
         first_counts = dict(obs_meas.get_counts()) if obs_meas else {}
@@ -183,11 +194,16 @@ class BatchExecutor:
         return BatchCounts(
             distribution_no_noise=first_counts,
             distribution_with_noise=first_counts,
+            sub_result=sub_res,
         )
 
     @staticmethod
     def _extract_uncut_results(raw_res, meta: dict[str, Any], info: Any, shots: int, seed: int) -> BatchCounts:
-        """Extract noisy counts and compute ideal baseline for regular uncut circuits."""
+        """Extract noisy counts and compute ideal baseline for regular uncut circuits.
+
+        `seed` must be the batch's own seed: a job whose shots run over several batches
+        (or several shot shards) would otherwise draw the same ideal samples each time.
+        """
         meas_name = meta["meas"]
         raw_pub = raw_res[0]
         counts_with_noise = dict(getattr(raw_pub.data, meas_name).get_counts())
@@ -248,7 +264,7 @@ class BatchExecutor:
                 machine,
                 prepared_batch,
                 batch_record.shots,
-                seed=(seed + batch_id - 1) % 2**32,
+                seed=derive_seed(seed, batch_id),
             )
             job_counts = self.split_counts(prepared_batch, merged_counts)
             return batch_record, job_counts, None, prepared_batch

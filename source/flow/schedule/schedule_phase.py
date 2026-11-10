@@ -86,8 +86,13 @@ class SchedulePhase:
         # Auto-detect whether optional cutting occurred
         max_capacity = SchedulingCutterHelper.get_max_capacity(machines)
         has_optional_cut = False
+        has_shot_distribution = False
         for s_job in scheduler_job.values():
             info = getattr(s_job, "job_information", None)
+            # A shot shard stands for its logical job, which may be a cut subcircuit
+            if getattr(info, "shot_parent", None) is not None:
+                has_shot_distribution = True
+                info = info.shot_parent
             parent = getattr(info, "parent_job", None)
             if parent is not None:
                 parent_qubits = getattr(parent, "num_qubits", 0) or getattr(
@@ -95,9 +100,9 @@ class SchedulePhase:
                 )
                 if parent_qubits <= max_capacity:
                     has_optional_cut = True
-                    break
 
         capture_result_schedule.optional_cutting = has_optional_cut
+        capture_result_schedule.shot_distribution = has_shot_distribution
         algo_policy = getattr(self.algorithm, "cutting_policy", None) or getattr(
             self.algorithm, "optional_cutting_policy", None
         )

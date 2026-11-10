@@ -107,6 +107,11 @@ class CircuitPreparation:
         Handles heterogeneous batches where some jobs are cut subexperiments (with QPD & obs registers)
         and other jobs are regular uncut circuits (meas registers).
 
+        Joint circuit i runs subexperiment variant i of every cut subcircuit. Uncut circuits
+        run once, in joint circuit 0 only: the batch's duration is the sum over joint
+        circuits, so repeating them in every variant would charge an uncut job for runs
+        whose results are never used.
+
         Args:
             jobs: Dictionary of jobs to run in this batch.
 
@@ -167,8 +172,8 @@ class CircuitPreparation:
                 joint_qc.compose(sub_qc, qubits=qubits_to_map, clbits=clbits_to_map, inplace=True)
                 q_offset += sub_qc.num_qubits
 
-            # 2. Compose uncut circuits (repeated alongside each subexperiment variant)
-            for name, job in uncut_jobs.items():
+            # 2. Compose uncut circuits, once, alongside the first subexperiment variant
+            for name, job in (uncut_jobs.items() if i == 0 else ()):
                 uncut_qc = job.circuit
                 qr = QuantumRegister(uncut_qc.num_qubits, f"q_{name}")
                 joint_qc.add_register(qr)

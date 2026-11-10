@@ -10,3 +10,4 @@ CLAUDE.md
 
 # Generated outputs. Results already in git stay tracked; use `git add -f` to keep a new one.
 results/
+doc/

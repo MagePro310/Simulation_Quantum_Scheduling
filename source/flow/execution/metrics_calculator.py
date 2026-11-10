@@ -17,10 +17,11 @@ class MetricsCalculator:
         """Calculate final execution metrics."""
         summary.makespan = now
 
-        # Count job statuses (filter out internal cut subcircuits, keep actual user jobs)
+        # Count job statuses (filter out cut subcircuits and shot shards, keep actual user jobs)
         target_results = {
             k: r for k, r in results.items()
             if getattr(r.job_info, "parent_job", None) is None
+            and getattr(r.job_info, "shot_parent", None) is None
         }
 
         summary.succeeded_jobs = sum(1 for r in target_results.values() if r.status == "SUCCEEDED")
@@ -74,7 +75,7 @@ class MetricsCalculator:
             cap = getattr(machine_obj, "capacity", 1) or 1
             batches = [b for b in summary.batches if b.machine_name == machine_name and b.status == "SUCCEEDED"]
             busy_time = sum(b.end_time - b.start_time for b in batches)
-            qubit_time = sum(b.logical_qubits * (b.end_time - b.start_time) for b in batches)
+            qubit_time = sum(b.occupied_qubit_time for b in batches)
             total_qubit_time += qubit_time
 
             summary.machines[machine_name] = MachineExecutionResult(

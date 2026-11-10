@@ -30,6 +30,10 @@ class JobInfo:
     cutting_context: Any | None = None
     cutting_overhead: float = 0.0
 
+    # Shot distribution context: a shard runs part of shot_parent's shots
+    shot_parent: JobInfo | None = None
+    shot_shards: dict[str, JobInfo] | None = None
+
 
 @dataclass
 class SchedulerJobInfo:
@@ -61,3 +65,4 @@ class ExecutionResult:
     error_reason: str | None = None
     requested_shots: int = 0
     completed_shots: int = 0
+    sub_result: Any | None = None  # Accumulated QPD PrimitiveResult of a cut subcircuit

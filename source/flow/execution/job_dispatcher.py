@@ -5,7 +5,7 @@ Handles candidate selection for quantum machines using configurable dispatching 
 - 'backfill': Skips blocked or oversized leading jobs to fit smaller queued jobs into remaining capacity.
 """
 
-from source.models.job import ExecutionResult, SchedulerJobInfo
+from source.models.job import ExecutionResult, JobInfo, SchedulerJobInfo
 
 
 class JobDispatcher:
@@ -117,6 +117,19 @@ class JobDispatcher:
         return active_jobs
 
     @staticmethod
+    def _expand_dependencies(dependencies: list[JobInfo | None]) -> list[JobInfo | None]:
+        """Replace each dependency that was split into shot shards by its shards.
+
+        A split job is not in the schedule itself, so a dependency on it would match
+        nothing and be skipped silently; its shards are what actually run.
+        """
+        expanded: list[JobInfo | None] = []
+        for dep_info in dependencies:
+            shards = getattr(dep_info, "shot_shards", None)
+            expanded.extend(shards.values() if shards else [dep_info])
+        return expanded
+
+    @staticmethod
     def _is_job_ready(
         now: float,
         job_name: str,
@@ -132,7 +145,7 @@ class JobDispatcher:
 
         # 2. DAG dependencies constraint (all parents must be SUCCEEDED)
         dependencies = scheduler_job[job_name].depends_on or []
-        for dep_info in dependencies:
+        for dep_info in JobDispatcher._expand_dependencies(dependencies):
             for dep_name, dep_job in scheduler_job.items():
                 if dep_job.job_information is dep_info:
                     if results[dep_name].status != "SUCCEEDED":
@@ -157,7 +170,7 @@ class JobDispatcher:
 
                 failed_deps = [
                     dep_name
-                    for dep_info in (job.depends_on or [])
+                    for dep_info in JobDispatcher._expand_dependencies(job.depends_on or [])
                     for dep_name, dep_job in scheduler_job.items()
                     if dep_job.job_information is dep_info and results[dep_name].status in {"FAILED", "BLOCKED"}
                 ]

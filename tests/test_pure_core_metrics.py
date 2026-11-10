@@ -136,3 +136,21 @@ def test_queue_policy_strict_vs_backfill_dispatch():
     assert active_backfill == ["small"]
     assert queue_backfill == ["large"]
 
+
+
+def test_batch_qubit_time_defaults_to_whole_batch_and_drives_utilization():
+    from source.flow.execution.metrics_calculator import MetricsCalculator
+    from source.models.execution import BatchExecutionRecord
+    from source.models.machine import MachineCharacteristic
+    from source.models.schedule_result import ExecutionSummary
+
+    full = BatchExecutionRecord(1, "m", ("a",), 100, 0.0, 2.0, logical_qubits=4, status="SUCCEEDED")
+    partial = BatchExecutionRecord(2, "m", ("b",), 100, 2.0, 4.0, logical_qubits=4, status="SUCCEEDED", qubit_time=3.0)
+    assert full.occupied_qubit_time == 8.0
+    assert partial.occupied_qubit_time == 3.0
+
+    summary = ExecutionSummary(batches=[full, partial])
+    machines = {"m": MachineCharacteristic(name="m", quantum_machine=None, capacity=5)}
+    MetricsCalculator.calculate_metrics(summary, {}, machines, now=4.0)
+    assert summary.machines["m"].qubit_time == 11.0
+    assert summary.cluster_qubit_utilization == 11.0 / (5 * 4.0)

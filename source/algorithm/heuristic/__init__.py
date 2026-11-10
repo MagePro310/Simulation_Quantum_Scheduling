@@ -1,6 +1,7 @@
 """Heuristic quantum scheduling algorithm implementations."""
 
 from source.algorithm.heuristic.adaptive_ffd import Adaptive_FFD
+from source.algorithm.heuristic.cut_and_shoot import CutAndShoot
 from source.algorithm.heuristic.ffd import FFD, FFDBin
 from source.algorithm.heuristic.ffd_v2 import FFD_v2
 from source.algorithm.heuristic.lpt import LPT, LPTMachine
@@ -14,4 +15,5 @@ __all__ = [
     "LPT",
     "LPTMachine",
     "QGroup",
+    "CutAndShoot",
 ]

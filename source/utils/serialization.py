@@ -20,6 +20,7 @@ def serialize_result(capture_result_schedule: ResultOfSchedule) -> dict[str, Any
         "exceed_cutting_policy": capture_result_schedule.exceed_cutting_policy,
         "optional_cutting": capture_result_schedule.optional_cutting,
         "optional_cutting_policy": capture_result_schedule.optional_cutting_policy,
+        "shot_distribution": capture_result_schedule.shot_distribution,
     }
 
     if capture_result_schedule.execution_summary:
@@ -35,6 +36,7 @@ def serialize_result(capture_result_schedule: ResultOfSchedule) -> dict[str, Any
                 "start_time": getattr(batch, "start_time", 0.0),
                 "end_time": getattr(batch, "end_time", 0.0),
                 "logical_qubits": getattr(batch, "logical_qubits", 0),
+                "qubit_time": getattr(batch, "occupied_qubit_time", None),
                 "status": getattr(batch, "status", "UNKNOWN"),
                 "error_reason": getattr(batch, "error_reason", None),
             }

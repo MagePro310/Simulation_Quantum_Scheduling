@@ -5,6 +5,7 @@ from qiskit_aer import AerSimulator
 from qiskit_addon_cutting import reconstruct_expectation_values
 
 from source.utils.fidelity import compute_hellinger_fidelity
+from source.utils.seeding import derive_seed
 
 
 class CircuitReconstructor:
@@ -64,7 +65,8 @@ class CircuitReconstructor:
         # 3. Execute uncut circuit baseline on AerSimulator
         qc_uncut = cutting_context.clean_circuit.copy()
         qc_uncut.measure_all()
-        uncut_job = AerSimulator().run(qc_uncut, shots=shots, seed_simulator=seed)
+        baseline_seed = derive_seed(seed, "reconstruction", cutting_context.parent_job.job_name or "")
+        uncut_job = AerSimulator().run(qc_uncut, shots=shots, seed_simulator=baseline_seed)
         uncut_counts = dict(uncut_job.result().get_counts())
 
         # 4. Metrics

@@ -54,6 +54,7 @@ class ResultOfSchedule:
     exceed_cutting_policy: str = "greedy"
     optional_cutting: bool = False
     optional_cutting_policy: str | None = None
+    shot_distribution: bool = False  # Whether any job's shots were split across shards
     queue_policy: str = "strict"
     seed: int = 0
     workload_fingerprint: str = ""

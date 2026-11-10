@@ -569,3 +569,51 @@ def test_adaptive_ffd_no_unnecessary_cuts():
     assert "j1" in scheduled
     assert "j2" in scheduled
     assert capture.optional_cutting is False
+
+
+def test_joint_batch_runs_uncut_circuit_once():
+    """Joint circuit i runs subexperiment variant i; an uncut job sharing the batch must
+    appear only in the first one, or its time is charged once per variant."""
+    from source.flow.execution.circuit_composer import CircuitPreparation
+
+    big = JobInfo(job_name="big", circuit=get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=7), num_qubits=7, shots=1024)
+    sub_b = SchedulingCutterHelper.cut_job(big, cluster_sizes=[5, 2])["big_sub_B"].job_information
+    small = JobInfo(job_name="small", circuit=get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=2), num_qubits=2, shots=1024)
+
+    circuits, meta = CircuitPreparation.compose_joint_cutting_batch({"big_sub_B": sub_b, "small": small})
+
+    assert len(circuits) == len(sub_b.subexperiments) > 1
+    with_small = [i for i, qc in enumerate(circuits) if any(cr.name == "meas_small" for cr in qc.cregs)]
+    assert with_small == [0]
+    assert all(any(cr.name == "obs_big_sub_B" for cr in qc.cregs) for qc in circuits)
+    assert meta["small"] == {"type": "uncut", "meas": "meas_small"}
+
+
+def test_uncut_job_in_joint_batch_keeps_all_its_shots():
+    from source.flow.execution import SilentTimelineReporter
+    from source.flow.execution.orchestrator import ExecutionPhase
+
+    big = JobInfo(job_name="big", circuit=get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=7), num_qubits=7, shots=512)
+    subs = SchedulingCutterHelper.cut_job(big, cluster_sizes=[5, 2])
+    small = SchedulerJobInfo(job_information=JobInfo(
+        job_name="small", circuit=get_benchmark("ghz", level=BenchmarkLevel.ALG, circuit_size=3), num_qubits=3, shots=512))
+    scheduled = {**subs, "small": small}
+    for order, (name, machine) in enumerate({"big_sub_A": "belem", "big_sub_B": "bogota", "small": "bogota"}.items()):
+        scheduled[name].assigned_machine = machine
+        scheduled[name].dispatch_order = order
+    machines = {
+        "belem": MachineCharacteristic(name="belem", quantum_machine=FakeBelemV2(), capacity=5),
+        "bogota": MachineCharacteristic(name="bogota", quantum_machine=FakeBogotaV2(), capacity=5),
+    }
+
+    phase = ExecutionPhase(reporter=SilentTimelineReporter())
+    results = phase.execute(machines, scheduled)
+
+    joint = next(b for b in phase.execution_summary.batches if "small" in b.job_ids)
+    assert "big_sub_B" in joint.job_ids
+    # small (3q) runs only in the first of the joint circuits, big_sub_B (2q) in all of them
+    duration = joint.end_time - joint.start_time
+    assert 2 * duration < joint.occupied_qubit_time < joint.logical_qubits * duration
+    assert results["small"].status == "SUCCEEDED"
+    assert sum(results["small"].distribution_with_noise.values()) == 512
+    assert results["big"].status == "SUCCEEDED"

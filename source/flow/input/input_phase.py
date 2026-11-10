@@ -5,8 +5,7 @@ from __future__ import annotations
 from typing import Any
 import random
 
-from mqt.bench import BenchmarkLevel, get_benchmark
-
+from source.flow.input.benchmark_circuits import load_benchmark_circuit
 from source.models.job import JobInfo
 from source.models.machine import MachineCharacteristic
 from source.models.simulation_config import SimulationConfig
@@ -72,11 +71,11 @@ class InputPhase:
                     arrival_time = 0.0
                     priority = 1
 
-                circuit = get_benchmark(benchmark_name, level=BenchmarkLevel.ALG, circuit_size=num_qubits)
+                circuit = load_benchmark_circuit(benchmark_name, num_qubits)
                 origin_job_info[job_name] = JobInfo(
                     job_name=job_name,
                     circuit=circuit,
-                    num_qubits=num_qubits,
+                    num_qubits=circuit.num_qubits,
                     shots=shots,
                     arrival_time=arrival_time,
                     priority=priority,
@@ -91,11 +90,11 @@ class InputPhase:
             for i in range(1, num_jobs + 1):
                 job_name = f"job{i}"
                 num_qubits = rng.randint(min_q, max_q)
-                circuit = get_benchmark(benchmark_name, level=BenchmarkLevel.ALG, circuit_size=num_qubits)
+                circuit = load_benchmark_circuit(benchmark_name, num_qubits)
                 origin_job_info[job_name] = JobInfo(
                     job_name=job_name,
                     circuit=circuit,
-                    num_qubits=num_qubits,
+                    num_qubits=circuit.num_qubits,
                     shots=shots,
                     arrival_time=0.0,
                     priority=1,

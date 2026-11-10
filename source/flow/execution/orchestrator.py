@@ -112,7 +112,9 @@ class ExecutionPhase:
             # 5. Advance clock to next event
             now = self._next_event_time(now, events, scheduler_job, results, queue_policy)
 
-        # Cut jobs that never reconstructed still need a result of their own
+        # Jobs whose shards or subcircuits did not all succeed still need a result of their own.
+        # Shards first: a sharded subcircuit needs its result before its cut parent is finalized.
+        self.reconstruction_handler.finalize_unmerged_shards(results)
         self.reconstruction_handler.finalize_unreconstructed_parents(results)
 
         # Finalize metrics and visualization
@@ -167,6 +169,7 @@ class ExecutionPhase:
 
     def _complete_finished_batches(self, now, events, machine_states, results, seed) -> None:
         """Process all batches that completed by current time."""
+        reported: set[str] = set()
         while events and events[0][0] <= now:
             _, _, completion = heapq.heappop(events)
             state = machine_states[completion.batch_record.machine_name]
@@ -178,17 +181,45 @@ class ExecutionPhase:
             state.busy = False
 
             for job_name in completion.batch_record.job_ids:
-                if results[job_name].status == "SUCCEEDED":
-                    result = results[job_name]
-                    info = getattr(result, "job_info", None)
-                    if info and getattr(info, "parent_job", None) is not None:
+                if results[job_name].status != "SUCCEEDED":
+                    continue
+                info = getattr(results[job_name], "job_info", None)
+                # Report the user's job once: a shard reports its merged job when that completes
+                shot_parent = getattr(info, "shot_parent", None)
+                if shot_parent is not None:
+                    job_name = shot_parent.job_name
+                    if job_name not in results or job_name in reported:
                         continue
-                    self.reporter.print_completion(job_name, result.execution_time, result.fidelity)
+                    info = shot_parent
+                if info and getattr(info, "parent_job", None) is not None:
+                    continue
+                reported.add(job_name)
+                result = results[job_name]
+                self.reporter.print_completion(job_name, result.execution_time, result.fidelity)
 
     # ========== Initialization ==========
 
+    @staticmethod
+    def _validate_shot_shards(scheduler_job) -> None:
+        """Require that a split job is replaced by all of its shards and never runs itself."""
+        for job_name, job in scheduler_job.items():
+            info = job.job_information
+            if info is not None and info.shot_shards:
+                raise ValueError(
+                    f"Job {job_name!r} was split into shot shards; return its shards "
+                    f"{sorted(info.shot_shards)} instead of the job itself."
+                )
+            shot_parent = getattr(info, "shot_parent", None)
+            if shot_parent is not None:
+                missing = sorted(set(shot_parent.shot_shards or {}) - set(scheduler_job))
+                if missing:
+                    raise ValueError(
+                        f"Shot shards {missing} of job {shot_parent.job_name!r} are missing from the schedule."
+                    )
+
     def _initialize_machines(self, machines, scheduler_job) -> dict[str, MachineState]:
         """Create machine states with job queues sorted by dispatch order."""
+        self._validate_shot_shards(scheduler_job)
         queues = {name: [] for name in machines}
         for job_name, job in scheduler_job.items():
             if job.assigned_machine in queues:
