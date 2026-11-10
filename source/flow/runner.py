@@ -69,10 +69,12 @@ def run_pipeline(
 
     # 4. Schedule Phase:
     #    - Mandatory exceed cut: active for oversized circuits
-    schedule_result = SchedulePhase(
+    schedule_phase = SchedulePhase(
         algorithm=algo_instance,
         exceed_cutting_policy=cutting_policy,
-    ).execute(input_job, machines_set, capture_result_schedule)
+        max_subexperiments=resolved_config.scheduling.max_subexperiments,
+    )
+    schedule_result = schedule_phase.execute(input_job, machines_set, capture_result_schedule)
 
     # 5. Execution Phase:
     #    - Discrete-event simulation, batch execution, and circuit reconstruction
@@ -83,6 +85,7 @@ def run_pipeline(
         seed=seed,
         gantt_output_path=str(gantt_output_path) if gantt_output_path else None,
         capture_result_schedule=capture_result_schedule,
+        rejected_jobs=schedule_phase.rejected,
     )
 
     # 6. Print scheduling results to terminal

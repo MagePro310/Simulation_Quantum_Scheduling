@@ -10,7 +10,14 @@ from qiskit import QuantumCircuit
 from qiskit.quantum_info import PauliList
 from qiskit_addon_cutting import generate_cutting_experiments, partition_problem
 
+from source.flow.schedule.cutting.cut_placement import CutBudgetExceeded, CutPlan, plan_cut
 from source.models.job import JobInfo
+
+
+def _label_name(index: int) -> str:
+    return chr(65 + index) if index < 26 else f"P{index}"
+
+
 @dataclass
 class CuttingContext:
     """Store metadata needed to reconstruct a cut circuit after execution."""
@@ -37,15 +44,24 @@ class CircuitCutter:
         self,
         parent_job: JobInfo,
         partition_sizes: list[int],
+        max_subexperiments: int | None = None,
     ) -> dict[str, JobInfo]:
-        """Cut a circuit directly according to specified cluster/partition sizes.
+        """Cut a circuit into subcircuits of the given sizes, at the cheapest place.
+
+        Which qubits fill each subcircuit is chosen by `plan_cut` to minimise the
+        sampling overhead; subcircuit i (label 'A', 'B', ...) has partition_sizes[i] qubits.
 
         Args:
             parent_job: Original JobInfo requiring cutting.
             partition_sizes: List of qubit counts for each subcircuit (e.g. [5, 2] or [4, 3]).
+            max_subexperiments: Budget on subexperiments per subcircuit; None means none.
 
         Returns:
             Dictionary mapping child job name to child JobInfo instance.
+
+        Raises:
+            CutBudgetExceeded: If the cheapest cut needs more subexperiments than the
+                budget. Checked before any subexperiment is generated.
         """
         if parent_job.circuit is None:
             raise ValueError(f"Job {parent_job.job_name} has no circuit to cut.")
@@ -59,11 +75,14 @@ class CircuitCutter:
                 f"circuit qubit count ({num_qubits})."
             )
 
-        # Generate partition labels from sizes: ['A']*size_A + ['B']*size_B + ...
-        partition_labels: list[str] = []
-        for i, size in enumerate(partition_sizes):
-            label = chr(65 + i) if i < 26 else f"P{i}"
-            partition_labels.extend([label] * size)
+        plan = plan_cut(clean_circuit, partition_sizes)
+        if max_subexperiments is not None and plan.num_subexperiments > max_subexperiments:
+            raise CutBudgetExceeded(
+                f"cutting {parent_job.job_name} into {list(partition_sizes)} needs "
+                f"{plan.num_subexperiments} subexperiments ({plan.num_cuts} cut gates) "
+                f"> budget {max_subexperiments}"
+            )
+        partition_labels = [_label_name(part) for part in plan.labels]
 
         observables, all_z_strings = self._build_computational_observables(num_qubits)
         partitioned, subexperiments, coefficients = self._partition_and_generate_experiments(
@@ -86,38 +105,30 @@ class CircuitCutter:
             all_z_strings=all_z_strings,
         )
 
+    def plan_by_partition_sizes(
+        self,
+        parent_job: JobInfo,
+        partition_sizes: list[int],
+    ) -> CutPlan | None:
+        """Cheapest cut for these sizes, without generating anything (None if impossible)."""
+        if parent_job.circuit is None:
+            return None
+        clean_circuit = self._prepare_clean_circuit(parent_job.circuit)
+        if sum(partition_sizes) != clean_circuit.num_qubits:
+            return None
+        return plan_cut(clean_circuit, partition_sizes)
+
     def estimate_overhead_by_partition_sizes(
         self,
         parent_job: JobInfo,
         partition_sizes: list[int],
     ) -> float:
-        """Estimate QPD sampling overhead without generating subexperiments or Pauli observables.
+        """Sampling overhead of the cheapest cut for these sizes (0.0 if not cuttable).
 
         Fast, lightweight method allowing algorithms to evaluate cutting costs before deciding.
-
-        Args:
-            parent_job: Original JobInfo requiring cutting evaluation.
-            partition_sizes: List of qubit counts for each subcircuit.
-
-        Returns:
-            Sampling overhead factor (e.g. 9.0 for 1 cut two-qubit gate, 81.0 for 2 cuts).
         """
-        if parent_job.circuit is None:
-            return 0.0
-
-        clean_circuit = self._prepare_clean_circuit(parent_job.circuit)
-        num_qubits = clean_circuit.num_qubits
-
-        if sum(partition_sizes) != num_qubits:
-            return 0.0
-
-        partition_labels: list[str] = []
-        for i, size in enumerate(partition_sizes):
-            label = chr(65 + i) if i < 26 else f"P{i}"
-            partition_labels.extend([label] * size)
-
-        partitioned = partition_problem(clean_circuit, partition_labels=partition_labels)
-        return self._calculate_overhead(partitioned)
+        plan = self.plan_by_partition_sizes(parent_job, partition_sizes)
+        return plan.overhead if plan is not None else 0.0
 
     # -------------------------------------------------------------------------
     # Dedicated Sub-functions (Single Responsibility)

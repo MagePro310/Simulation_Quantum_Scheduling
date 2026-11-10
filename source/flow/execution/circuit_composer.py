@@ -10,11 +10,35 @@ Provides two distinct circuit composition strategies:
 
 from typing import Any
 from qiskit.circuit import ClassicalRegister, QuantumCircuit, QuantumRegister
-from qiskit.compiler import transpile
+from qiskit.transpiler import PassManager, generate_preset_pass_manager
 
 from source.models.execution import PreparedBatch
 from source.models.job import JobInfo
 from source.models.machine import MachineCharacteristic
+
+
+def build_pass_manager(
+    machine: MachineCharacteristic,
+    *,
+    seed: int,
+    initial_layout: Any = None,
+) -> PassManager:
+    """The one compilation used by both batch paths.
+
+    optimization_level=1 with ALAP scheduling: idle periods become explicit delays,
+    which the backend noise model turns into relaxation errors, and the circuit's
+    duration is read from the same schedule on both paths. `initial_layout` comes
+    from the execution phase's LayoutStrategy (None lets Qiskit choose).
+    """
+    options: dict[str, Any] = {
+        "optimization_level": 1,
+        "backend": machine.quantum_machine,
+        "seed_transpiler": seed,
+        "scheduling_method": "alap",
+    }
+    if initial_layout is not None:
+        options["initial_layout"] = initial_layout
+    return generate_preset_pass_manager(**options)
 
 
 class CircuitPreparation:
@@ -30,13 +54,15 @@ class CircuitPreparation:
         jobs: dict[str, JobInfo],
         *,
         seed: int,
+        initial_layout: Any = None,
     ) -> PreparedBatch:
         """Compose independent circuits onto disjoint qubit ranges and transpile for backend.
 
         Args:
             machine: Quantum machine specification with target backend.
-            jobs: Dictionary of uncut JobInfo objects to pack together.
+            jobs: Dictionary of uncut JobInfo objects to pack together, in qubit order.
             seed: Random seed for transpiler reproducibility.
+            initial_layout: Physical layout from the LayoutStrategy, or None.
 
         Returns:
             PreparedBatch container with merged circuit, transpiled circuit, and bit mappings.
@@ -46,13 +72,9 @@ class CircuitPreparation:
         merged_circuit, classical_bits = self._compose_circuits(jobs, total_qubits, total_clbits)
 
         # Transpile composite circuit for target backend
-        transpiled_circuit = transpile(
-            merged_circuit,
-            backend=machine.quantum_machine,
-            scheduling_method="alap",
-            optimization_level=1,
-            seed_transpiler=seed,
-        )
+        transpiled_circuit = build_pass_manager(
+            machine, seed=seed, initial_layout=initial_layout
+        ).run(merged_circuit)
         duration_per_shot = float(
             transpiled_circuit.estimate_duration(machine.quantum_machine.target, unit="s")
         )

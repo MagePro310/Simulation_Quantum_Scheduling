@@ -17,10 +17,12 @@ def serialize_result(capture_result_schedule: ResultOfSchedule) -> dict[str, Any
         "name_machines": capture_result_schedule.name_machines,
         "name_schedule": capture_result_schedule.name_schedule,
         "schedule_latency": capture_result_schedule.schedule_latency,
+        "cutting_time": capture_result_schedule.cutting_time,
         "exceed_cutting_policy": capture_result_schedule.exceed_cutting_policy,
         "optional_cutting": capture_result_schedule.optional_cutting,
         "optional_cutting_policy": capture_result_schedule.optional_cutting_policy,
         "shot_distribution": capture_result_schedule.shot_distribution,
+        "rejected": dict(capture_result_schedule.rejected_jobs),
     }
 
     if capture_result_schedule.execution_summary:
@@ -37,6 +39,8 @@ def serialize_result(capture_result_schedule: ResultOfSchedule) -> dict[str, Any
                 "end_time": getattr(batch, "end_time", 0.0),
                 "logical_qubits": getattr(batch, "logical_qubits", 0),
                 "qubit_time": getattr(batch, "occupied_qubit_time", None),
+                "two_qubit_gates": getattr(batch, "two_qubit_gates", 0),
+                "crosstalk_exposed_gates": getattr(batch, "crosstalk_exposed_gates", 0),
                 "status": getattr(batch, "status", "UNKNOWN"),
                 "error_reason": getattr(batch, "error_reason", None),
             }
@@ -49,9 +53,11 @@ def serialize_result(capture_result_schedule: ResultOfSchedule) -> dict[str, Any
             "average_fidelity": exec_sum.average_fidelity,
             "cluster_qubit_utilization": exec_sum.cluster_qubit_utilization,
             "total_cutting_overhead": exec_sum.total_cutting_overhead,
+            "crosstalk_exposure": exec_sum.crosstalk_exposure,
             "succeeded_jobs": exec_sum.succeeded_jobs,
             "failed_jobs": exec_sum.failed_jobs,
             "blocked_jobs": exec_sum.blocked_jobs,
+            "rejected_jobs": exec_sum.rejected_jobs,
             "machines": {
                 name: {
                     "machine_name": m.machine_name,
@@ -109,7 +115,8 @@ def print_schedule_result(
     print(f"  • Mandatory Cut (Exceed)  : {exceed_policy} (always active for > max_capacity)")
     print(f"  • Optional Cut (Remaining): {opt_str}")
     print(f"  • Queue / Backfill Policy : {queue_policy}")
-    print(f"  • Schedule Latency        : {latency:.6f} s")
+    print(f"  • Schedule Latency        : {latency:.6f} s (decision only)")
+    print(f"  • Cutting Time            : {capture_result_schedule.cutting_time:.6f} s (subexperiment generation)")
     print(f"  • Target Workload         : {num_circuits} circuits ({circ_type}), avg {avg_qubits:.1f} qubits")
     print(f"  • Target Machines         : {machines_str}")
 
@@ -127,6 +134,7 @@ def print_schedule_result(
         print(f"  • Avg Fidelity (Qubit-wt) : {summary.average_fidelity:.4f}")
         print(f"  • Cluster Qubit Util      : {summary.cluster_qubit_utilization * 100:.2f}%")
         print(f"  • Total Cutting Overhead  : {summary.total_cutting_overhead:g}")
+        print(f"  • Crosstalk Exposure      : {summary.crosstalk_exposure * 100:.2f}% of 2-qubit gates")
 
         if summary.machines:
             print("-" * width)

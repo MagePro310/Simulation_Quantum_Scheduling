@@ -1,7 +1,8 @@
 """Derive every simulator seed from the single configured base seed.
 
-All sampling in a run (Aer ideal and noisy runs, SamplerV2, the reconstruction
-baseline) takes its seed from `derive_seed(execution.seed, <stream>)`:
+All sampling in a run (Aer noisy runs, SamplerV2, and the sampled fallback of the
+ideal reference, which is otherwise exact) takes its seed from
+`derive_seed(execution.seed, <stream>)`:
 
 - the same config always reproduces the same samples, and
 - different streams (batches, reconstructions) draw independent samples. If two

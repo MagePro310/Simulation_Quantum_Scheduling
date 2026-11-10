@@ -131,6 +131,7 @@ class InputPhase:
                 quantum_machine=backend_instance,
                 capacity=backend_instance.num_qubits,
                 rep_delay=self.config.execution.rep_delay,  # None: the backend's default
+                crosstalk_factor=self.config.execution.crosstalk_factor,
             )
             machines[backend_instance.name] = char
 

@@ -88,6 +88,12 @@ class MetricsCalculator:
         if summary.makespan > 0 and total_cluster_capacity > 0:
             summary.cluster_qubit_utilization = total_qubit_time / (total_cluster_capacity * summary.makespan)
 
+        # 5. Crosstalk exposure: share of executed two-qubit gates next to a simultaneous one
+        succeeded = [b for b in summary.batches if b.status == "SUCCEEDED"]
+        gate_runs = sum(b.shots * b.two_qubit_gates for b in succeeded)
+        exposed_runs = sum(b.shots * b.crosstalk_exposed_gates for b in succeeded)
+        summary.crosstalk_exposure = exposed_runs / gate_runs if gate_runs > 0 else 0.0
+
     @staticmethod
     def print_summary(summary: ExecutionSummary):
         """Print execution summary."""

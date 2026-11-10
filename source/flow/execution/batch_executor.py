@@ -8,9 +8,7 @@ Features:
 
 from typing import Any
 from qiskit.primitives.containers import DataBin, PrimitiveResult, PubResult
-from qiskit.transpiler import generate_preset_pass_manager
-from qiskit_aer import AerSimulator
-from qiskit_ibm_runtime import SamplerV2
+from qiskit_aer.primitives import SamplerV2 as AerSamplerV2
 
 from source.models.execution import (
     BatchCounts,
@@ -19,11 +17,13 @@ from source.models.execution import (
 )
 from source.models.job import ExecutionResult, SchedulerJobInfo
 from source.models.machine import MachineCharacteristic
-from source.flow.execution.circuit_composer import CircuitPreparation
+from source.flow.execution.circuit_composer import CircuitPreparation, build_pass_manager
+from source.flow.execution.crosstalk import apply_crosstalk, noisy_simulator
 from source.flow.execution.interfaces import DefaultLayoutStrategy, LayoutStrategy
 from source.flow.execution.quantum_simulator import QuantumExecutor
 from source.utils.seeding import derive_seed
 from source.utils.timing import shots_duration
+from source.utils.ideal_distribution import ideal_counts
 
 
 class BatchExecutor:
@@ -116,20 +116,11 @@ class BatchExecutor:
 
             # Layout strategy hook: None means Qiskit Pass Manager runs native heuristic
             initial_layout = self.layout_strategy.get_initial_layout(machine.quantum_machine, jobs_dict)
-            pm_kwargs = {
-                "optimization_level": 1,
-                "backend": machine.quantum_machine,
-                "seed_transpiler": seed,
-            }
-            if initial_layout is not None:
-                pm_kwargs["initial_layout"] = initial_layout
-
-            pass_manager = generate_preset_pass_manager(**pm_kwargs)
+            pass_manager = build_pass_manager(machine, seed=seed, initial_layout=initial_layout)
             batch_seed = derive_seed(seed, batch_id)
-            sampler = SamplerV2(
-                mode=machine.quantum_machine,
-                options={"simulator": {"seed_simulator": batch_seed}},
-            )
+            # Aer's sampler, not qiskit-ibm-runtime's: the runtime one rejects the
+            # crosstalk noise channels as non-ISA instructions
+            sampler = AerSamplerV2.from_backend(noisy_simulator(machine.quantum_machine), seed=batch_seed)
 
             joint_circuits, reg_meta = self.circuit_composer.compose_joint_cutting_batch(jobs_dict)
             isa_composed = pass_manager.run(joint_circuits)
@@ -146,7 +137,16 @@ class BatchExecutor:
             total_duration = sum(durations)
             qubit_time = sum(qc.num_qubits * d for qc, d in zip(joint_circuits, durations))
 
-            raw_res = sampler.run(isa_composed, shots=batch_record.shots).result()
+            noisy_circuits = []
+            for circuit in isa_composed:
+                noisy, exposed, two_qubit = apply_crosstalk(
+                    circuit, machine.quantum_machine, machine.crosstalk_factor
+                )
+                noisy_circuits.append(noisy)
+                batch_record.crosstalk_exposed_gates += exposed
+                batch_record.two_qubit_gates += two_qubit
+
+            raw_res = sampler.run(noisy_circuits, shots=batch_record.shots).result()
 
             # Demultiplex results for each active job
             job_counts = {}
@@ -204,24 +204,17 @@ class BatchExecutor:
 
     @staticmethod
     def _extract_uncut_results(raw_res, meta: dict[str, Any], info: Any, shots: int, seed: int) -> BatchCounts:
-        """Extract noisy counts and compute ideal baseline for regular uncut circuits.
+        """Extract noisy counts and attach the exact ideal reference for an uncut circuit.
 
-        `seed` must be the batch's own seed: a job whose shots run over several batches
-        (or several shot shards) would otherwise draw the same ideal samples each time.
+        `seed` is the batch's own seed; it is used only if the ideal reference has to
+        fall back to sampling (see utils/ideal_distribution.py).
         """
         meas_name = meta["meas"]
         raw_pub = raw_res[0]
         counts_with_noise = dict(getattr(raw_pub.data, meas_name).get_counts())
 
-        # Ideal noiseless simulation for baseline fidelity
-        qc_ideal = info.circuit.copy()
-        if qc_ideal.num_clbits == 0:
-            qc_ideal.measure_all()
-        ideal_res = AerSimulator().run(qc_ideal, shots=shots, seed_simulator=seed).result()
-        counts_no_noise = dict(ideal_res.get_counts())
-
         return BatchCounts(
-            distribution_no_noise=counts_no_noise,
+            distribution_no_noise=ideal_counts(info.circuit, shots, seed=seed),
             distribution_with_noise=counts_with_noise,
         )
 
@@ -244,10 +237,12 @@ class BatchExecutor:
         """Execute standard multi-programming composite batch."""
         if prepared_batch is None or prepared_batch.job_ids != batch_record.job_ids:
             try:
+                jobs_dict = {name: scheduler_job[name].job_information for name in active_jobs}
                 prepared_batch = self.circuit_composer.prepare_batch(
                     machine,
-                    {name: scheduler_job[name].job_information for name in active_jobs},
+                    jobs_dict,
                     seed=seed,
+                    initial_layout=self.layout_strategy.get_initial_layout(machine.quantum_machine, jobs_dict),
                 )
             except Exception as e:
                 return batch_record, None, f"Batch {batch_id} preparation failed: {e}", None
@@ -273,18 +268,31 @@ class BatchExecutor:
                 batch_record.shots,
                 seed=derive_seed(seed, batch_id),
             )
+            batch_record.crosstalk_exposed_gates = merged_counts.crosstalk_exposed_gates
+            batch_record.two_qubit_gates = merged_counts.two_qubit_gates
             job_counts = self.split_counts(prepared_batch, merged_counts)
+            for name, counts in job_counts.items():
+                counts.distribution_no_noise = ideal_counts(
+                    scheduler_job[name].job_information.circuit,
+                    batch_record.shots,
+                    seed=derive_seed(seed, batch_id, name),
+                )
             return batch_record, job_counts, None, prepared_batch
         except Exception as e:
             return batch_record, None, f"Batch {batch_id} execution failed: {e}", prepared_batch
 
     @staticmethod
     def split_counts(prepared_batch: PreparedBatch, merged_counts: BatchCounts) -> dict[str, BatchCounts]:
-        """Split merged batch results into individual job counts."""
+        """Split merged batch results into individual job counts.
+
+        Each job's keys follow Qiskit's convention over its own classical bits (its
+        clbit 0 rightmost), the same as the joint path and the exact ideal reference,
+        so counts from batches on either path add up correctly.
+        """
         job_counts = {}
 
         for job_id in prepared_batch.job_ids:
-            bit_indices = prepared_batch.classical_bits[job_id]
+            bit_indices = tuple(reversed(prepared_batch.classical_bits[job_id]))
             no_noise = {}
             with_noise = {}
 

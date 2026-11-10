@@ -1,7 +1,6 @@
 """Quantum simulator execution."""
 
-from qiskit_aer import AerSimulator
-
+from source.flow.execution.crosstalk import apply_crosstalk, noisy_simulator
 from source.models.execution import BatchCounts, PreparedBatch
 from source.models.machine import MachineCharacteristic
 
@@ -24,15 +23,21 @@ class QuantumExecutor:
         *,
         seed: int,
     ) -> BatchCounts:
-        """Execute transpiled circuit on quantum simulator."""
-        ideal_simulator = AerSimulator()
-        noisy_simulator = AerSimulator.from_backend(machine.quantum_machine)
-        circuit = prepared_batch.transpiled_circuit
+        """Run the transpiled composite circuit on the backend's noisy simulator, with
+        conditional crosstalk channels added (flow/execution/crosstalk.py).
 
-        ideal_result = ideal_simulator.run(circuit, shots=shots, seed_simulator=seed).result()
-        noisy_result = noisy_simulator.run(circuit, shots=shots, seed_simulator=seed).result()
+        Only the noisy counts are sampled. The ideal reference is exact and computed
+        per job from its own circuit (BatchExecutor), so distribution_no_noise is empty.
+        """
+        simulator = noisy_simulator(machine.quantum_machine)
+        circuit, exposed, two_qubit = apply_crosstalk(
+            prepared_batch.transpiled_circuit, machine.quantum_machine, machine.crosstalk_factor
+        )
+        noisy_result = simulator.run(circuit, shots=shots, seed_simulator=seed).result()
 
         return BatchCounts(
-            distribution_no_noise=dict(ideal_result.get_counts()),
+            distribution_no_noise={},
             distribution_with_noise=dict(noisy_result.get_counts()),
+            crosstalk_exposed_gates=exposed,
+            two_qubit_gates=two_qubit,
         )

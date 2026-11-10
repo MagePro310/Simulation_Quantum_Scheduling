@@ -27,6 +27,9 @@ class BatchCounts:
     distribution_no_noise: dict[str, int]
     distribution_with_noise: dict[str, int]
     sub_result: Any | None = None  # QPD PrimitiveResult for a cut subcircuit
+    # Crosstalk exposure of the batch circuit (set on a batch's merged counts only)
+    crosstalk_exposed_gates: int = 0
+    two_qubit_gates: int = 0
 
 
 @dataclass
@@ -46,6 +49,10 @@ class BatchExecutionRecord:
     # busy for its whole duration (logical_qubits * duration). A joint cutting batch sets
     # it from its individual circuits, since an uncut job runs in only the first of them.
     qubit_time: float | None = None
+    # Two-qubit gates per shot, summed over the batch's circuits, and how many of them
+    # overlap a neighbouring two-qubit gate (flow/execution/crosstalk.py)
+    two_qubit_gates: int = 0
+    crosstalk_exposed_gates: int = 0
 
     @property
     def occupied_qubit_time(self) -> float:

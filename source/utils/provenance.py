@@ -32,8 +32,9 @@ def workload_fingerprint(
 ) -> str:
     """Hash the actual jobs and machines; machine order counts because it affects first fit.
 
-    Given the machines dict (name -> MachineCharacteristic), each machine's rep_delay is
-    hashed too: it sets the time of every shot, so runs with different values don't compare.
+    Given the machines dict (name -> MachineCharacteristic), each machine's rep_delay and
+    crosstalk_factor are hashed too: they set every shot's time and the noise, so runs
+    with different values don't compare.
     """
     rep_delays = (
         {name: getattr(m, "rep_delay", None) for name, m in machine_names.items()}
@@ -49,6 +50,9 @@ def workload_fingerprint(
     }
     if rep_delays is not None:
         payload["rep_delays"] = rep_delays
+        payload["crosstalk_factors"] = {
+            name: getattr(m, "crosstalk_factor", None) for name, m in machine_names.items()
+        }
     encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()[:16]
 

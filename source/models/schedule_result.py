@@ -26,6 +26,8 @@ class ExecutionSummary:
     - average_fidelity: qubit-weighted mean circuit fidelity across succeeded jobs
     - cluster_qubit_utilization: total qubit space-time over (capacity * makespan)
     - total_cutting_overhead: sum of sampling overhead gamma^2 from circuit cutting
+    - crosstalk_exposure: fraction of executed two-qubit gates (shot-weighted) that ran
+      alongside a neighbouring two-qubit gate, whatever the crosstalk factor
     """
 
     makespan: float = 0.0
@@ -34,8 +36,10 @@ class ExecutionSummary:
     average_fidelity: float = 0.0
     cluster_qubit_utilization: float = 0.0
     total_cutting_overhead: float = 0.0
+    crosstalk_exposure: float = 0.0
     succeeded_jobs: int = 0
-    failed_jobs: int = 0
+    failed_jobs: int = 0  # Includes rejected jobs
+    rejected_jobs: int = 0  # Oversized jobs no cut within budget could make fit
     blocked_jobs: int = 0
     machines: dict[str, MachineExecutionResult] = field(default_factory=dict)
     batches: list = field(default_factory=list)
@@ -50,11 +54,13 @@ class ResultOfSchedule:
     average_qubits: float = 0.0
     name_machines: list[str] = field(default_factory=list)
     name_schedule: str = ""
-    schedule_latency: float = 0.0
+    schedule_latency: float = 0.0  # Algorithm decision time, without subexperiment generation
+    cutting_time: float = 0.0  # Subexperiment generation time, PreSchedule and algorithm
     exceed_cutting_policy: str = "greedy"
     optional_cutting: bool = False
     optional_cutting_policy: str | None = None
     shot_distribution: bool = False  # Whether any job's shots were split across shards
+    rejected_jobs: dict = field(default_factory=dict)  # Oversized and uncuttable: name -> reason
     queue_policy: str = "strict"
     seed: int = 0
     workload_fingerprint: str = ""

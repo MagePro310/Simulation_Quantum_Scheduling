@@ -11,6 +11,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from source.models.machine import DEFAULT_CROSSTALK_FACTOR
+
 import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -66,9 +68,14 @@ class SchedulingConfig:
     """Configuration for scheduling policies and circuit cutting."""
 
     cutting_policy: str = "greedy"  # 'greedy' or 'half'
+    # Cut budget: most subexperiments per subcircuit a cut may need (6 per cut CNOT).
+    # Optional cuts over budget are skipped; oversized jobs over budget are rejected.
+    max_subexperiments: int = 216
 
     def __post_init__(self) -> None:
         self.cutting_policy = self.cutting_policy.lower()
+        if self.max_subexperiments < 1:
+            raise ValueError(f"max_subexperiments must be >= 1, got {self.max_subexperiments}.")
         if self.cutting_policy not in VALID_CUTTING_POLICIES:
             raise ValueError(
                 f"Invalid cutting_policy '{self.cutting_policy}'. "
@@ -81,6 +88,7 @@ class SchedulingConfig:
             return cls()
         return cls(
             cutting_policy=data.get("cutting_policy", "greedy"),
+            max_subexperiments=int(data.get("max_subexperiments", 216)),
         )
 
 
@@ -94,6 +102,9 @@ class ExecutionConfig:
     # Wait between shots, in seconds. None uses each backend's default_rep_delay
     # (250 us on the IBM fake backends), which dominates a shot's time.
     rep_delay: float | None = None
+    # Crosstalk error multiplier k for simultaneous neighbouring two-qubit gates
+    # (flow/execution/crosstalk.py); 1.0 turns crosstalk off.
+    crosstalk_factor: float = DEFAULT_CROSSTALK_FACTOR
 
     def __post_init__(self) -> None:
         self.queue_policy = self.queue_policy.lower()
@@ -108,6 +119,8 @@ class ExecutionConfig:
             raise ValueError(f"Timeout must be positive, got {self.timeout}.")
         if self.rep_delay is not None and self.rep_delay < 0:
             raise ValueError(f"rep_delay must be non-negative seconds, got {self.rep_delay}.")
+        if self.crosstalk_factor < 1.0:
+            raise ValueError(f"crosstalk_factor must be >= 1 (1 turns crosstalk off), got {self.crosstalk_factor}.")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> ExecutionConfig:
@@ -118,6 +131,7 @@ class ExecutionConfig:
             queue_policy=data.get("queue_policy", "strict"),
             timeout=int(data.get("timeout", 600)),
             rep_delay=None if data.get("rep_delay") is None else float(data["rep_delay"]),
+            crosstalk_factor=float(data.get("crosstalk_factor", DEFAULT_CROSSTALK_FACTOR)),
         )
 
 

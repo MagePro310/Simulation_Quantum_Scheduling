@@ -9,6 +9,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 from source.models.job import JobInfo, SchedulerJobInfo
+from source.flow.schedule.cutting.cut_placement import CutBudgetExceeded
 from source.flow.schedule.cutting.schedule_cutter_helper import SchedulingCutterHelper
 
 
@@ -32,6 +33,8 @@ class PreSchedulePhase:
             exceed_cutting_policy: Strategy for oversized circuits ('greedy' or 'half').
         """
         self.exceed_cutting_policy = exceed_cutting_policy.lower()
+        # Oversized jobs whose cheapest cut exceeds the budget: name -> (job, reason)
+        self.rejected: Dict[str, tuple[JobInfo, str]] = {}
 
     def set_exceed_cutting_policy(self, policy: str) -> None:
         """Set mandatory cutting policy for oversized circuits: 'greedy' or 'half'."""
@@ -60,8 +63,13 @@ class PreSchedulePhase:
         origin_job_info: Dict[str, JobInfo],
         max_capacity: int,
     ) -> Dict[str, SchedulerJobInfo]:
-        """Cut all circuits exceeding maximum machine capacity using exceed_cutting_policy."""
+        """Cut all circuits exceeding maximum machine capacity using exceed_cutting_policy.
+
+        An oversized job that can't be cut within the subexperiment budget can't run
+        anywhere; it goes to `self.rejected` instead of the returned schedule.
+        """
         scheduler_job: Dict[str, SchedulerJobInfo] = {}
+        self.rejected = {}
 
         for job_name, job_info in origin_job_info.items():
             if self._is_oversized(job_info, max_capacity):
@@ -72,7 +80,12 @@ class PreSchedulePhase:
                     target_qubits=max_capacity,
                     mode=self.exceed_cutting_policy,
                 )
-                sub_jobs = SchedulingCutterHelper.cut_job(job_info, cluster_sizes=cluster_sizes)
+                try:
+                    sub_jobs = SchedulingCutterHelper.cut_job(job_info, cluster_sizes=cluster_sizes)
+                except CutBudgetExceeded as reason:
+                    print(f"  -> Rejected: {reason}")
+                    self.rejected[job_name] = (job_info, f"uncuttable: {reason}")
+                    continue
                 scheduler_job.update(sub_jobs)
             else:
                 scheduler_job[job_name] = self._wrap_uncut_job(job_info)

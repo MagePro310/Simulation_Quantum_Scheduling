@@ -149,7 +149,7 @@ def test_uncut_job_split_across_two_machines_merges_into_one_result():
     assert merged.status == "SUCCEEDED"
     assert merged.completed_shots == 1024
     assert sum(merged.distribution_with_noise.values()) == 1024
-    assert sum(merged.distribution_no_noise.values()) == 1024
+    assert sum(merged.distribution_no_noise.values()) == pytest.approx(1024)  # exact expected counts
     assert 0.0 <= merged.fidelity <= 1.0
     assert {b.machine_name for b in summary.batches} == {"belem", "bogota"}
     # Shards ran in parallel, so the merged busy time is one shard's, not their sum
@@ -298,9 +298,10 @@ def test_subcircuit_running_over_several_batches_keeps_every_shot():
     assert all(pub.data.observable_measurements.num_shots == 1024 for pub in sub_b)
 
 
-def test_shards_in_joint_batches_draw_independent_ideal_samples():
-    """An uncut job batched with a cut subcircuit takes the joint-execution path; its
-    ideal baseline must use the batch's seed, or every shard repeats the same samples."""
+def test_shards_in_joint_batches_sample_independently_against_exact_ideal():
+    """An uncut job batched with a cut subcircuit takes the joint-execution path. Its
+    noisy samples must use the batch's seed, or every shard repeats the same samples;
+    its ideal reference is exact, so it is the same for every shard."""
     first = SchedulingCutterHelper.cut_job(_ghz("big", 7), cluster_sizes=[5, 2])
     second = SchedulingCutterHelper.cut_job(_ghz("other", 7), cluster_sizes=[5, 2])
     shards = ShotDistributionHelper.split_shots(_ghz("j", 3), 2)
@@ -318,6 +319,8 @@ def test_shards_in_joint_batches_draw_independent_ideal_samples():
     for shard in ("j_shot0", "j_shot1"):
         batch = next(b for b in summary.batches if shard in b.job_ids)
         assert any("_sub_" in name for name in batch.job_ids)  # ran on the joint path
-    assert results["j_shot0"].distribution_no_noise != results["j_shot1"].distribution_no_noise
+    assert results["j_shot0"].distribution_with_noise != results["j_shot1"].distribution_with_noise
+    for shard in ("j_shot0", "j_shot1"):
+        assert results[shard].distribution_no_noise == pytest.approx({"000": 256.0, "111": 256.0})
     assert results["j"].status == "SUCCEEDED"
     assert (summary.succeeded_jobs, summary.failed_jobs) == (3, 0)

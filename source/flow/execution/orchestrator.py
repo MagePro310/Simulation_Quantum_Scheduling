@@ -78,10 +78,26 @@ class ExecutionPhase:
         seed: int = 0,
         gantt_output_path: str | None = None,
         capture_result_schedule=None,
+        rejected_jobs: dict | None = None,
     ) -> dict[str, ExecutionResult]:
-        """Execute quantum job schedule using discrete-event simulation."""
+        """Execute quantum job schedule using discrete-event simulation.
+
+        `rejected_jobs` (name -> (JobInfo, reason)) are submitted jobs the schedule phase
+        refused; each gets a FAILED result, so totals still add up to the submitted jobs.
+        """
         machine_states = self._initialize_machines(machines, scheduler_job)
         results = self._initialize_results(scheduler_job)
+        for name, (job_info, reason) in (rejected_jobs or {}).items():
+            results[name] = ExecutionResult(
+                job_info=job_info,
+                assigned_machine=None,
+                distribution_no_noise={},
+                distribution_with_noise={},
+                execution_time=0.0,
+                requested_shots=job_info.shots or 1024,
+                status="FAILED",
+                error_reason=reason,
+            )
         events = []  # Priority queue of (timestamp, batch_id, BatchCompletion)
 
         now = 0.0
@@ -119,6 +135,7 @@ class ExecutionPhase:
 
         # Finalize metrics and visualization
         MetricsCalculator.calculate_metrics(self.execution_summary, results, machines, now)
+        self.execution_summary.rejected_jobs = len(rejected_jobs or {})
         if capture_result_schedule:
             capture_result_schedule.execution_summary = self.execution_summary
             capture_result_schedule.queue_policy = queue_policy

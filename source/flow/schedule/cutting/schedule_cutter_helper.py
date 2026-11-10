@@ -1,9 +1,14 @@
 """Helper module providing a tool library for scheduling algorithms and pre-scheduling to cut circuits."""
 
 import math
+import time
 from typing import Any, Dict, List
 from source.models.job import JobInfo, SchedulerJobInfo
+from source.flow.schedule.cutting.cut_placement import CutBudgetExceeded, CutPlan
 from source.flow.schedule.cutting.cutter_pipeline import CircuitCutter
+
+# Default budget: subexperiments per subcircuit, 6^3 (three cut CNOTs)
+DEFAULT_MAX_SUBEXPERIMENTS = 216
 
 
 class SchedulingCutterHelper:
@@ -11,6 +16,23 @@ class SchedulingCutterHelper:
 
     # Reusable shared CircuitCutter instance to avoid repetitive object instantiations
     _cutter: CircuitCutter = CircuitCutter()
+
+    # Cut budget: a cut needing more subexperiments per subcircuit is refused
+    # (CutBudgetExceeded). SchedulePhase sets it from scheduling.max_subexperiments.
+    max_subexperiments: int | None = DEFAULT_MAX_SUBEXPERIMENTS
+
+    # Wall time spent generating subcircuits and QPD subexperiments since the last reset.
+    # SchedulePhase reads it to keep this mechanical cost out of algorithms' latency.
+    _generation_seconds: float = 0.0
+
+    @classmethod
+    def reset_generation_time(cls) -> None:
+        cls._generation_seconds = 0.0
+
+    @classmethod
+    def generation_time(cls) -> float:
+        """Seconds spent in cut_job's subexperiment generation since the last reset."""
+        return cls._generation_seconds
 
     @staticmethod
     def get_max_capacity(machines: Dict[str, Any] | None) -> int:
@@ -36,6 +58,41 @@ class SchedulingCutterHelper:
         return getattr(job_info, "parent_job", None) is None and qubits >= min_qubits
 
     @classmethod
+    def _resolve_sizes(cls, num_qubits: int, cluster_sizes: List[int] | int | None) -> List[int]:
+        if cluster_sizes is None:
+            half = math.ceil(num_qubits / 2)
+            return [half, num_qubits - half]
+        if isinstance(cluster_sizes, int):
+            return cls.calculate_cluster_sizes(num_qubits, target_qubits=cluster_sizes)
+        return list(cluster_sizes)
+
+    @classmethod
+    def estimate_cut(
+        cls,
+        job: SchedulerJobInfo | JobInfo,
+        cluster_sizes: List[int] | int | None = None,
+    ) -> CutPlan | None:
+        """Cheapest cut for these sizes and its cost, without generating subexperiments.
+
+        Returns None if the job can't be cut into these sizes.
+        """
+        job_info = job.job_information if isinstance(job, SchedulerJobInfo) else job
+        if not job_info or not job_info.circuit or not cls.can_cut(job):
+            return None
+        num_qubits = getattr(job_info, "num_qubits", 0) or getattr(job_info.circuit, "num_qubits", 0)
+        resolved_sizes = cls._resolve_sizes(num_qubits, cluster_sizes)
+        if sum(resolved_sizes) != num_qubits:
+            return None
+        return cls._cutter.plan_by_partition_sizes(parent_job=job_info, partition_sizes=resolved_sizes)
+
+    @classmethod
+    def within_budget(cls, plan: CutPlan | None) -> bool:
+        """Whether a cut plan respects the subexperiment budget."""
+        return plan is not None and (
+            cls.max_subexperiments is None or plan.num_subexperiments <= cls.max_subexperiments
+        )
+
+    @classmethod
     def estimate_overhead(
         cls,
         job: SchedulerJobInfo | JobInfo,
@@ -48,29 +105,11 @@ class SchedulingCutterHelper:
             cluster_sizes: Desired partition sizes (list of ints or integer target).
 
         Returns:
-            Sampling overhead (float, e.g. 9.0 for 1 cut, 81.0 for 2 cuts). Returns 0.0 if not cuttable.
+            Sampling overhead of the cheapest cut (e.g. 9.0 for 1 cut CNOT, 81.0 for 2).
+            Returns 0.0 if not cuttable.
         """
-        job_info = job.job_information if isinstance(job, SchedulerJobInfo) else job
-        if not job_info or not job_info.circuit or not cls.can_cut(job):
-            return 0.0
-
-        num_qubits = getattr(job_info, "num_qubits", 0) or getattr(job_info.circuit, "num_qubits", 0)
-
-        if cluster_sizes is None:
-            half = math.ceil(num_qubits / 2)
-            resolved_sizes = [half, num_qubits - half]
-        elif isinstance(cluster_sizes, int):
-            resolved_sizes = cls.calculate_cluster_sizes(num_qubits, target_qubits=cluster_sizes)
-        else:
-            resolved_sizes = list(cluster_sizes)
-
-        if sum(resolved_sizes) != num_qubits:
-            return 0.0
-
-        return cls._cutter.estimate_overhead_by_partition_sizes(
-            parent_job=job_info,
-            partition_sizes=resolved_sizes,
-        )
+        plan = cls.estimate_cut(job, cluster_sizes)
+        return plan.overhead if plan is not None else 0.0
 
     @staticmethod
     def calculate_cluster_sizes(
@@ -129,6 +168,9 @@ class SchedulingCutterHelper:
 
         Returns:
             Dictionary of {child_name: SchedulerJobInfo} with updated constraints and links.
+
+        Raises:
+            CutBudgetExceeded: If the cheapest cut exceeds `max_subexperiments`.
         """
         s_job = job if isinstance(job, SchedulerJobInfo) else SchedulerJobInfo(job_information=job)
         job_info = s_job.job_information
@@ -137,25 +179,22 @@ class SchedulingCutterHelper:
 
         num_qubits = job_info.num_qubits or job_info.circuit.num_qubits
         cutter = cls._cutter
-
-        # Resolve cluster sizes
-        if cluster_sizes is None:
-            half = math.ceil(num_qubits / 2)
-            resolved_sizes = [half, num_qubits - half]
-        elif isinstance(cluster_sizes, int):
-            resolved_sizes = cls.calculate_cluster_sizes(num_qubits, target_qubits=cluster_sizes)
-        else:
-            resolved_sizes = list(cluster_sizes)
+        resolved_sizes = cls._resolve_sizes(num_qubits, cluster_sizes)
 
         print(
             f"[Circuit Cutting Tool] Cutting {job_info.job_name} ({num_qubits} qubits) "
             f"into clusters {resolved_sizes}..."
         )
 
-        children_jobs = cutter.cut_by_partition_sizes(
-            parent_job=job_info,
-            partition_sizes=resolved_sizes,
-        )
+        started = time.perf_counter()
+        try:
+            children_jobs = cutter.cut_by_partition_sizes(
+                parent_job=job_info,
+                partition_sizes=resolved_sizes,
+                max_subexperiments=cls.max_subexperiments,
+            )
+        finally:
+            cls._generation_seconds += time.perf_counter() - started
 
         sub_sizes = [c.num_qubits for c in children_jobs.values()]
         print(
@@ -187,14 +226,19 @@ class SchedulingCutterHelper:
             target_qubits: Desired target capacity for subcircuits (optional).
             min_qubits: Minimum qubit count to qualify for cutting (default: 2).
 
+        Jobs whose cheapest cut exceeds the subexperiment budget are kept uncut.
+
         Returns:
             Updated dictionary of SchedulerJobInfo with cut subcircuits replacing original jobs.
         """
         updated_jobs: Dict[str, SchedulerJobInfo] = {}
         for job_name, s_job in jobs.items():
             if cls.can_cut(s_job, min_qubits=min_qubits):
-                sub_jobs = cls.cut_job(s_job, cluster_sizes=target_qubits)
-                updated_jobs.update(sub_jobs)
+                try:
+                    updated_jobs.update(cls.cut_job(s_job, cluster_sizes=target_qubits))
+                except CutBudgetExceeded as reason:
+                    print(f"  -> Left uncut: {reason}")
+                    updated_jobs[job_name] = s_job  # optional cut over budget: run whole
             else:
                 updated_jobs[job_name] = s_job
         return updated_jobs

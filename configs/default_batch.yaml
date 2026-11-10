@@ -23,6 +23,7 @@ machines:
 # 3. Circuit Cutting Policy
 scheduling:
   cutting_policy: "greedy"  # 'greedy' (max capacity packing) or 'half' (balanced partition)
+  max_subexperiments: 216   # Cut budget: max QPD subexperiments per subcircuit (6 per cut CNOT); over budget = skip optional cut / reject oversized job
 
 # 4. Execution & Simulator Parameters
 execution:
@@ -30,6 +31,7 @@ execution:
   queue_policy: "strict"    # 'strict' (FIFO queue) or 'backfill'
   timeout: 600              # Timeout in seconds per algorithm
   rep_delay: null           # Wait between shots in seconds; null = backend default (250e-6 on IBM fake backends)
+  crosstalk_factor: 2.0     # Error multiplier k for simultaneous neighbouring 2-qubit gates; 1.0 = no crosstalk
 
 # 5. Batch Runner & Automated Comparison Configuration
 batch:

@@ -32,6 +32,7 @@ from source.flow.schedule.cutting.schedule_cutter_helper import SchedulingCutter
 from source.flow.schedule.shots import ShotDistributionHelper
 from source.models.job import JobInfo, SchedulerJobInfo
 from source.models.machine import MachineCharacteristic
+from source.utils.timing import num_circuit_runs
 
 
 def _num_qubits(info: JobInfo) -> int:
@@ -160,7 +161,7 @@ class CutAndShoot:
         machines: dict[str, MachineCharacteristic],
     ) -> dict[str, SchedulerJobInfo]:
         next_order = {name: 0 for name in machines}
-        load = {name: 0.0 for name in machines}  # assigned qubit-shots, for the non-shot-wise mode
+        load = {name: 0.0 for name in machines}  # assigned qubit-shots x circuit runs, for the non-shot-wise mode
         scheduled: dict[str, SchedulerJobInfo] = {}
 
         for job_name in self._job_order(jobs):
@@ -184,7 +185,7 @@ class CutAndShoot:
                 piece.assigned_machine = machine_name
                 piece.dispatch_order = next_order[machine_name]
                 next_order[machine_name] += 1
-                load[machine_name] += qubits * (piece.job_information.shots or 0)
+                load[machine_name] += qubits * (piece.job_information.shots or 0) * num_circuit_runs(info)
                 scheduled[name] = piece
 
         return scheduled

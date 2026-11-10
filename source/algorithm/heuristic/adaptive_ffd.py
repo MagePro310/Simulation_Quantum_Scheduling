@@ -117,9 +117,12 @@ class Adaptive_FFD(FFD):
 
                     # Check overhead before cutting
                     cluster_sizes = [slack, remainder]
-                    overhead = SchedulingCutterHelper.estimate_overhead(s_job, cluster_sizes)
+                    plan = SchedulingCutterHelper.estimate_cut(s_job, cluster_sizes)
 
-                    if overhead <= self.max_overhead_threshold:
+                    if (
+                        SchedulingCutterHelper.within_budget(plan)
+                        and plan.overhead <= self.max_overhead_threshold
+                    ):
                         slack_bin = best_cand
 
             if slack_bin is not None:

@@ -1,10 +1,10 @@
 """Reconstruct shot distribution from subcircuit cutting and compare with uncut baseline."""
 
 import numpy as np
-from qiskit_aer import AerSimulator
 from qiskit_addon_cutting import reconstruct_expectation_values
 
 from source.utils.fidelity import compute_hellinger_fidelity
+from source.utils.ideal_distribution import ideal_counts
 from source.utils.seeding import derive_seed
 
 
@@ -21,7 +21,7 @@ class CircuitReconstructor:
 
         Returns:
             Tuple of:
-            - uncut_counts: Dictionary of {bitstring: count} from uncut baseline execution.
+            - uncut_counts: Exact ideal distribution of the uncut circuit, as expected counts for `shots`.
             - reconstructed_counts: Dictionary of {bitstring: count} reconstructed from subcircuits.
             - fidelity: Hellinger fidelity score in [0.0, 1.0].
             - tvd: Total Variation Distance in [0.0, 1.0].
@@ -62,12 +62,11 @@ class CircuitReconstructor:
             bs: int(np.round(probs_norm[i] * shots)) for i, bs in enumerate(bitstrings)
         }
 
-        # 3. Execute uncut circuit baseline on AerSimulator
+        # 3. Exact ideal distribution of the uncut circuit (expected counts for `shots`)
         qc_uncut = cutting_context.clean_circuit.copy()
         qc_uncut.measure_all()
         baseline_seed = derive_seed(seed, "reconstruction", cutting_context.parent_job.job_name or "")
-        uncut_job = AerSimulator().run(qc_uncut, shots=shots, seed_simulator=baseline_seed)
-        uncut_counts = dict(uncut_job.result().get_counts())
+        uncut_counts = ideal_counts(qc_uncut, shots, seed=baseline_seed)
 
         # 4. Metrics
         uncut_probs = np.array([uncut_counts.get(bs, 0) / shots for bs in bitstrings])

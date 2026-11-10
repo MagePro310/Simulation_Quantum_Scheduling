@@ -45,7 +45,13 @@ class LayoutStrategy(Protocol):
         backend: Any,
         jobs: dict[str, Any],
     ) -> list[int] | dict[Any, int] | None:
-        """Calculate and return physical qubit mapping or None for default Qiskit heuristic."""
+        """Calculate and return physical qubit mapping or None for default Qiskit heuristic.
+
+        Called for every batch on both execution paths. Layout indices refer to the
+        composite circuit's virtual qubits: on the standard path, jobs in `jobs`
+        order; on the joint path, cut subcircuits first, then uncut jobs, each group
+        in `jobs` order (see CircuitPreparation).
+        """
         ...
 
 
